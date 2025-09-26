@@ -1,6 +1,9 @@
 package sample.app.desktop;
 
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.context.annotation.Bean;
 import sample.app.desktop.ui.ChromiumWindow;
+import sample.app.desktop.util.SingleInstanceGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.env.Environment;
@@ -17,10 +20,16 @@ public class DesktopApplication {
 	private final ChromiumWindow chromiumWindow;
 	private final ServletWebServerApplicationContext webServerAppCtx;
     private final Environment environment;
+    private final SingleInstanceGuard singleInstanceGuard;
 
 	public static void main(String[] args) {
 		System.setProperty("java.awt.headless", "false");
 		SpringApplication.run(DesktopApplication.class, args);
+	}
+
+	@Bean
+	public ApplicationRunner singleInstanceRunner() {
+		return args -> singleInstanceGuard.acquire();
 	}
 
 	@EventListener(ApplicationReadyEvent.class)

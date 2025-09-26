@@ -95,18 +95,8 @@ public class ChromiumWindow {
                 });
 
                 CefSettings cefSettings = builder.getCefSettings();
-                cefSettings.windowless_rendering_enabled = false; // rendu standard
+                cefSettings.windowless_rendering_enabled = false;
                 cefSettings.log_severity = CefSettings.LogSeverity.LOGSEVERITY_DISABLE;
-
-                builder.addJcefArgs(
-                        "--disable-gpu-sandbox",
-                        "--disable-logging",
-                        "--log-severity=disable",
-                        "--no-default-browser-check",
-                        "--disable-component-update",
-                        "--disable-features=MetricsReporting",
-                        "--disable-crash-reporter"
-                );
 
                 cefApp = builder.build();
                 client = cefApp.createClient();
