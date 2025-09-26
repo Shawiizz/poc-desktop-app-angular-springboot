@@ -1,0 +1,81 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.6'
+    id 'io.spring.dependency-management' version '1.1.7'
+    id 'com.github.node-gradle.node' version '7.1.0'
+}
+
+group = 'sample.app'
+version = '0.0.1-SNAPSHOT'
+description = 'Desktop project'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'me.friwi:jcefmaven:135.0.20'
+
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+    annotationProcessor 'org.projectlombok:lombok'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+node {
+    version = '20.19.0'
+    npmVersion = '10.5.0'
+    download = true
+    nodeProjectDir = file("${project.projectDir}/frontend")
+}
+
+tasks.register('buildAngular', NpmTask) {
+    dependsOn npmInstall
+    description = "Build Angular application"
+    args = ['run', 'build']
+    inputs.dir("frontend/src")
+    inputs.file("frontend/angular.json")
+    inputs.file("frontend/package.json")
+    outputs.dir("frontend/dist")
+}
+
+tasks.register('copyAngularBuild', Copy) {
+    dependsOn buildAngular
+    description = "Copy Angular build to Spring Boot static resources"
+    from 'frontend/dist/frontend/browser'
+    into 'build/resources/main/static'
+}
+
+// By default we embed the built Angular frontend into the jar
+processResources.dependsOn copyAngularBuild
+
+// Alternative task: build only the backend jar (skip Angular build)
+tasks.register('bootJarNoAngular') {
+    group = 'build'
+    description = 'Assemble the bootJar without building or copying the Angular frontend'
+    dependsOn 'classes'
+    doLast {
+    println 'Packaging Spring Boot jar without Angular frontend...'
+    }
+}
+
+// Usage: gradlew bootJarNoAngular bootJar -x copyAngularBuild -x buildAngular
+// (You can create a more specific aggregate task later if needed)
