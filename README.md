@@ -147,3 +147,42 @@ desktop/
 | Windows | Edge WebView2 |
 | macOS | WebKit |
 | Linux | WebKitGTK |
+
+## Configuration
+
+The launcher configuration is in [launcher/src/main.ts](launcher/src/main.ts):
+
+```typescript
+const Config = {
+  app: {
+    name: "Desktop App",      // Window title
+    id: "desktop-app",        // App data folder name
+    version: "1.0.0",         // Used for update detection
+  },
+  frontend: {
+    remoteUrl: "",            // Remote frontend URL (empty = use embedded)
+  },
+  backend: {
+    port: 8080,               // Backend server port
+    healthEndpoint: "/actuator/health",
+    startupTimeout: 30000,    // Max wait time for backend (ms)
+    healthCheckInterval: 500, // Health check frequency (ms)
+  },
+  window: {
+    width: 1200,              // Window width
+    height: 800,              // Window height
+  },
+};
+```
+
+### Remote Frontend
+
+To use a hosted frontend instead of the embedded one:
+
+```typescript
+frontend: {
+  remoteUrl: "https://app.example.com",
+},
+```
+
+The backend still starts locally for API calls. The WebView opens the remote URL.

@@ -110,9 +110,21 @@ async function buildTarget(target: Target): Promise<void> {
   console.log(`\nBuilding for ${target}...`);
   console.log("-".repeat(40));
 
-  // Prepare output directory
+  // Prepare output directory with retry logic
   if (existsSync(outputDir)) {
-    rmSync(outputDir, { recursive: true });
+    for (let i = 0; i < 3; i++) {
+      try {
+        rmSync(outputDir, { recursive: true });
+        break;
+      } catch (e: any) {
+        if (e.code === "EBUSY" && i < 2) {
+          console.log("Directory locked, retrying in 1s...");
+          await Bun.sleep(1000);
+        } else {
+          throw e;
+        }
+      }
+    }
   }
   mkdirSync(outputDir, { recursive: true });
 

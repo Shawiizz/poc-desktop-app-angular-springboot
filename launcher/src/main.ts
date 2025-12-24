@@ -24,6 +24,12 @@ const Config = {
     id: "desktop-app",
     version: "1.0.0",
   },
+  frontend: {
+    // Remote URL for the frontend. If set, the WebView will point to this URL
+    // instead of the local backend. The backend still starts for API calls.
+    // Example: "https://app.example.com"
+    remoteUrl: "https://mohistmc.com",
+  },
   backend: {
     port: 8080,
     healthEndpoint: "/actuator/health",
@@ -74,18 +80,19 @@ function getBackendExecutableName(): string {
 class BackendManager {
   private process: ChildProcess | null = null;
   private readonly binaryPath: string;
-  private readonly versionPath: string;
+  private readonly hashPath: string;
 
   constructor() {
     const binDir = join(getAppDataDirectory(), "bin");
     this.binaryPath = join(binDir, getBackendExecutableName());
-    this.versionPath = join(binDir, ".version");
+    this.hashPath = join(binDir, ".hash");
   }
 
   async start(): Promise<boolean> {
     try {
       await this.extractIfNeeded();
-      return await this.spawnProcess();
+      this.spawnProcess();
+      return await this.waitForHealthy();
     } catch (error) {
       console.error("Failed to start backend:", error);
       return false;
@@ -106,38 +113,40 @@ class BackendManager {
       mkdirSync(binDir, { recursive: true });
     }
 
-    const installedVersion = await this.getInstalledVersion();
+    // Calculate hash of embedded binary
+    const binaryBlob = Bun.file(embeddedBackend);
+    const binaryBuffer = await binaryBlob.arrayBuffer();
+    const hasher = new Bun.CryptoHasher("md5");
+    hasher.update(new Uint8Array(binaryBuffer));
+    const currentHash = hasher.digest("hex");
+
+    // Check if extraction is needed
+    const installedHash = await this.getInstalledHash();
     
-    if (!existsSync(this.binaryPath) || installedVersion !== Config.app.version) {
-      console.log("Extracting backend binary...");
-      
-      const binaryBlob = Bun.file(embeddedBackend);
-      await Bun.write(this.binaryPath, binaryBlob);
+    if (!existsSync(this.binaryPath) || installedHash !== currentHash) {
+      await Bun.write(this.binaryPath, binaryBuffer);
 
       if (getPlatform() !== "windows") {
         chmodSync(this.binaryPath, 0o755);
       }
 
-      await Bun.write(this.versionPath, Config.app.version);
-      console.log("Backend extracted successfully");
+      await Bun.write(this.hashPath, currentHash);
     }
   }
 
-  private async getInstalledVersion(): Promise<string> {
-    if (!existsSync(this.versionPath)) {
+  private async getInstalledHash(): Promise<string> {
+    if (!existsSync(this.hashPath)) {
       return "";
     }
     
     try {
-      return (await Bun.file(this.versionPath).text()).trim();
+      return (await Bun.file(this.hashPath).text()).trim();
     } catch {
       return "";
     }
   }
 
-  private async spawnProcess(): Promise<boolean> {
-    console.log("Starting backend server...");
-
+  private spawnProcess(): void {
     this.process = spawn(this.binaryPath, [], {
       env: {
         ...process.env,
@@ -150,16 +159,6 @@ class BackendManager {
     });
 
     this.process.unref();
-
-    const isReady = await this.waitForHealthy();
-    
-    if (isReady) {
-      console.log("Backend server is ready");
-    } else {
-      console.error("Backend server failed to start");
-    }
-
-    return isReady;
   }
 
   private async waitForHealthy(): Promise<boolean> {
@@ -192,58 +191,43 @@ class BackendManager {
 }
 
 // =============================================================================
-// Window Manager
-// =============================================================================
-
-class WindowManager {
-  private readonly backendUrl: string;
-
-  constructor() {
-    this.backendUrl = `http://localhost:${Config.backend.port}`;
-  }
-
-  show(): void {
-    const { width, height } = Config.window;
-
-    const webview = new Webview(false, {
-      width,
-      height,
-      hint: SizeHint.NONE,
-    });
-
-    webview.title = Config.app.name;
-    webview.navigate(this.backendUrl);
-    webview.run();
-  }
-}
-
-// =============================================================================
 // Application
 // =============================================================================
 
 class Application {
   private readonly backend: BackendManager;
-  private readonly window: WindowManager;
 
   constructor() {
     this.backend = new BackendManager();
-    this.window = new WindowManager();
   }
 
   async run(): Promise<void> {
     this.registerSignalHandlers();
 
-    const started = await this.backend.start();
-    
-    if (!started) {
+    // Start backend and wait for it to be healthy
+    const isReady = await this.backend.start();
+
+    if (!isReady) {
+      console.error("Backend failed to start");
       process.exit(1);
     }
 
-    try {
-      this.window.show();
-    } finally {
-      this.backend.stop();
-    }
+    // Determine frontend URL (remote or local)
+    const frontendUrl = Config.frontend.remoteUrl || `http://localhost:${Config.backend.port}`;
+
+    // Open webview
+    const webview = new Webview(false, {
+      width: Config.window.width,
+      height: Config.window.height,
+      hint: SizeHint.NONE,
+    });
+
+    webview.title = Config.app.name;
+    webview.navigate(frontendUrl);
+    webview.run();
+
+    // Cleanup when window closes
+    this.backend.stop();
   }
 
   private registerSignalHandlers(): void {
