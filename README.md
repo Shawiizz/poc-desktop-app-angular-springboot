@@ -1,25 +1,33 @@
 # Desktop Application
 
-Desktop application with Spring Boot backend and Angular frontend, rendered in a native WebView.
+Desktop application with Spring Boot backend (API) and Angular frontend, packaged with Tauri.
 
 ## Architecture
 
 ```
 +--------------------------------------------------+
-|            Single Executable (~200MB)            |
+|            Single Executable (~94MB)             |
 |  +--------------------------------------------+  |
-|  |  Launcher (Bun + WebView)                  |  |
+|  |  Tauri (Rust)                              |  |
 |  |  +------------+      +-----------------+   |  |
-|  |  |  WebView   | HTTP |  Backend        |   |  |
+|  |  |  WebView   | HTTP |  Backend API    |   |  |
 |  |  |  (Native)  |<---->|  (Spring Boot)  |   |  |
+|  |  |  Angular   |      |  (Embedded)     |   |  |
 |  |  +------------+      +-----------------+   |  |
 |  +--------------------------------------------+  |
 +--------------------------------------------------+
 ```
 
-- Backend: Spring Boot compiled to native with GraalVM
-- Frontend: Angular bundled in backend static resources
-- Launcher: Bun executable with native WebView (Edge/WebKit/GTK)
+- **Backend**: Spring Boot compiled to native with GraalVM (API only)
+- **Frontend**: Angular served directly by Tauri WebView
+- **Launcher**: Tauri (Rust) with native WebView and embedded backend
+
+## Features
+
+- Frameless window with custom titlebar
+- Dynamic port allocation (no conflicts)
+- Splash screen during backend startup
+- Single portable executable
 
 ## Prerequisites
 
@@ -27,8 +35,8 @@ Desktop application with Spring Boot backend and Angular frontend, rendered in a
 |------|---------|---------|
 | Java | 21+ | Backend development |
 | Node.js | 18+ | Frontend development |
-| GraalVM | 21+ | Native compilation |
-| Bun | 1.0+ | Launcher build |
+| GraalVM | 21+ | Native backend compilation |
+| Rust | 1.70+ | Tauri build |
 
 ## Development
 
@@ -48,7 +56,7 @@ npm install
 npm run start
 ```
 
-Access: http://localhost:4200 (proxies API to backend)
+Access: http://localhost:4200
 
 ### Full development mode
 
@@ -63,151 +71,72 @@ cd frontend
 npm run start
 ```
 
-Open http://localhost:4200 for hot-reload development.
+## Production Build
 
-## Build
-
-### Development JAR
+### Quick build (frontend + Tauri only)
 
 ```bash
-./gradlew build
+cd frontend
+npm run build
+
+cd ../src-tauri
+cargo build --release
 ```
 
-Output: `build/libs/desktop-*.jar`
+Output: `src-tauri/target/release/desktop-app.exe`
 
-### Production (Native Executable)
+### Full build (with native backend)
+
+Use the build script from x64 Native Tools Command Prompt:
 
 ```bash
-# 1. Compile backend to native
-./gradlew nativeCompile
-
-# 2. Build launcher with embedded backend
-cd launcher
-bun install
-bun run build
+build-tauri.bat
 ```
 
-Output: `launcher/dist/windows/desktop-app.exe`
-
-### Build targets
-
-```bash
-bun run build              # Current platform
-bun run build:windows      # Windows x64
-bun run build:linux        # Linux x64
-bun run build:macos        # macOS x64
-bun run build:macos-arm    # macOS ARM64
-```
-
-## Output Structure
-
-```
-launcher/dist/
-  windows/
-    desktop-app.exe    # Single file (~200MB)
-  linux/
-    desktop-app
-  macos/
-    desktop-app
-```
-
-## Runtime Data
-
-The backend binary is extracted on first launch:
-
-| Platform | Path |
-|----------|------|
-| Windows | `%APPDATA%\desktop-app\` |
-| macOS | `~/Library/Application Support/desktop-app/` |
-| Linux | `~/.local/share/desktop-app/` |
+This will:
+1. Build Angular frontend
+2. Compile Spring Boot to native with GraalVM
+3. Embed backend in Tauri executable
+4. Create final portable exe
 
 ## Project Structure
 
 ```
 desktop/
-  build.gradle           # Backend build config
-  src/
-    main/
-      java/              # Spring Boot backend
-      resources/
-        static/          # Angular build output
-  frontend/
-    src/                 # Angular source
-  launcher/
-    src/
-      main.ts            # Launcher entry point
-    scripts/
-      build.ts           # Build script
+├── frontend/              # Angular frontend
+│   ├── src/app/
+│   │   ├── splash/        # Loading screen component
+│   │   ├── home/          # Main content component
+│   │   ├── titlebar/      # Custom window titlebar
+│   │   └── services/      # Angular services
+│   └── dist/              # Build output (embedded in Tauri)
+├── src/                   # Spring Boot backend
+│   └── main/java/sample/app/desktop/
+│       ├── controller/    # REST API controllers
+│       └── config/        # Configuration (CORS, etc.)
+├── src-tauri/             # Tauri application
+│   ├── src/main.rs        # Rust launcher code
+│   ├── backend/           # Embedded native backend
+│   └── capabilities/      # Tauri permissions
+└── app.config.json        # Application configuration
 ```
-
-## WebView Engines
-
-| Platform | Engine |
-|----------|--------|
-| Windows | Edge WebView2 |
-| macOS | WebKit |
-| Linux | WebKitGTK |
 
 ## Configuration
 
-### Centralized Configuration
-
-Application metadata is defined once in `app.config.json` at the project root:
+Edit `app.config.json` at the project root:
 
 ```json
 {
   "name": "Desktop App",
-  "id": "desktop-app",
+  "id": "com.example.desktop-app",
   "version": "1.0.0",
-  "description": "A desktop application"
+  "description": "My desktop application"
 }
 ```
 
-This single source of truth is used by:
+## Window Controls
 
-| Component | How it's used |
-|-----------|---------------|
-| **Gradle** | Reads config for version, description via JsonSlurper |
-| **Spring Boot** | `generateAppConfig` task copies to `build/resources/main/app-config.json`, exposed via `/api/config` |
-| **Launcher (Bun)** | Build script generates `config.generated.ts` from the JSON |
-| **Angular** | `ConfigService` calls `/api/config` at runtime |
-
-### Launcher Configuration
-
-Additional runtime config is in [launcher/src/main.ts](launcher/src/main.ts):
-
-```typescript
-const Config = {
-  app: {
-    // Auto-loaded from app.config.json
-    name: AppConfig.name,
-    id: AppConfig.id,
-    version: AppConfig.version,
-  },
-  frontend: {
-    remoteUrl: "",            // Remote frontend URL (empty = use embedded)
-  },
-  backend: {
-    port: 8080,               // Backend server port
-    healthEndpoint: "/actuator/health",
-    startupTimeout: 30000,    // Max wait time for backend (ms)
-    healthCheckInterval: 500, // Health check frequency (ms)
-  },
-  window: {
-    width: 1200,              // Window width
-    height: 800,              // Window height
-  },
-};
-```
-
-### Remote Frontend
-
-To use a hosted frontend instead of the embedded one:
-
-```typescript
-frontend: {
-  remoteUrl: "https://app.example.com",
-},
-```
-
-The backend still starts locally for API calls. The WebView opens the remote URL.
+The application uses a custom titlebar with:
+- Drag to move window
+- Minimize, maximize, close buttons
+- Application icon and name
