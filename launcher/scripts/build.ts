@@ -10,8 +10,9 @@
 
 import { $ } from "bun";
 import { existsSync, mkdirSync, cpSync, rmSync, statSync, writeFileSync, readFileSync } from "fs";
-import { join } from "path";
+import { join, resolve } from "path";
 import { patchWindowsExecutable } from "./patch-windows-exe";
+import { rcedit } from "rcedit";
 
 // =============================================================================
 // Configuration
@@ -23,6 +24,7 @@ const PATHS = {
   backendBuild: "../build/native/nativeCompile",
   appConfig: "../app.config.json",
   generatedConfig: "./src/config.generated.ts",
+  icon: "../favicon.ico",
 } as const;
 
 // Load app config
@@ -125,6 +127,15 @@ function cleanEmbeddedDirectory(): void {
   }
 }
 
+async function setWindowsIcon(exePath: string, iconPath: string): Promise<void> {
+  try {
+    await rcedit(resolve(exePath), { icon: resolve(iconPath) });
+    console.log("Icon set successfully");
+  } catch (error) {
+    console.warn("Failed to set icon:", error);
+  }
+}
+
 async function compileExecutable(target: Target, outputPath: string): Promise<void> {
   const config = TARGET_CONFIGS[target];
   
@@ -170,6 +181,14 @@ async function buildTarget(target: Target): Promise<void> {
   if (target === "windows") {
     console.log("Patching PE header for Windows...");
     patchWindowsExecutable(outputPath);
+
+    // Set icon using rcedit
+    if (existsSync(PATHS.icon)) {
+      console.log("Setting application icon...");
+      await setWindowsIcon(outputPath, PATHS.icon);
+    } else {
+      console.log("No icon.ico found in assets/, skipping icon...");
+    }
   }
 
   // Report results
