@@ -8,6 +8,12 @@ set JAVA_HOME=%GRAALVM_HOME%
 set PATH=%USERPROFILE%\.cargo\bin;%PATH%
 
 echo ========================================
+echo Step 0: Syncing configuration...
+echo ========================================
+call node sync-config.js
+
+echo.
+echo ========================================
 echo Step 1: Cleaning previous build...
 echo ========================================
 call gradlew clean
