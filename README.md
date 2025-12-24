@@ -150,14 +150,39 @@ desktop/
 
 ## Configuration
 
-The launcher configuration is in [launcher/src/main.ts](launcher/src/main.ts):
+### Centralized Configuration
+
+Application metadata is defined once in `app.config.json` at the project root:
+
+```json
+{
+  "name": "Desktop App",
+  "id": "desktop-app",
+  "version": "1.0.0",
+  "description": "A desktop application"
+}
+```
+
+This single source of truth is used by:
+
+| Component | How it's used |
+|-----------|---------------|
+| **Gradle** | Reads config for version, description via JsonSlurper |
+| **Spring Boot** | `generateAppConfig` task copies to `build/resources/main/app-config.json`, exposed via `/api/config` |
+| **Launcher (Bun)** | Build script generates `config.generated.ts` from the JSON |
+| **Angular** | `ConfigService` calls `/api/config` at runtime |
+
+### Launcher Configuration
+
+Additional runtime config is in [launcher/src/main.ts](launcher/src/main.ts):
 
 ```typescript
 const Config = {
   app: {
-    name: "Desktop App",      // Window title
-    id: "desktop-app",        // App data folder name
-    version: "1.0.0",         // Used for update detection
+    // Auto-loaded from app.config.json
+    name: AppConfig.name,
+    id: AppConfig.id,
+    version: AppConfig.version,
   },
   frontend: {
     remoteUrl: "",            // Remote frontend URL (empty = use embedded)

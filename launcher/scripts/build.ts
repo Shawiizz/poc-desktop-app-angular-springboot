@@ -9,7 +9,7 @@
  */
 
 import { $ } from "bun";
-import { existsSync, mkdirSync, cpSync, rmSync, statSync } from "fs";
+import { existsSync, mkdirSync, cpSync, rmSync, statSync, writeFileSync, readFileSync } from "fs";
 import { join } from "path";
 import { patchWindowsExecutable } from "./patch-windows-exe";
 
@@ -21,7 +21,36 @@ const PATHS = {
   dist: "./dist",
   embedded: "./src/embedded",
   backendBuild: "../build/native/nativeCompile",
+  appConfig: "../app.config.json",
+  generatedConfig: "./src/config.generated.ts",
 } as const;
+
+// Load app config
+interface AppConfig {
+  name: string;
+  id: string;
+  version: string;
+  description: string;
+}
+
+function loadAppConfig(): AppConfig {
+  const configPath = join(process.cwd(), PATHS.appConfig);
+  const content = readFileSync(configPath, "utf-8");
+  return JSON.parse(content);
+}
+
+function generateConfigFile(config: AppConfig): void {
+  const content = `// Auto-generated from app.config.json - DO NOT EDIT
+export const AppConfig = {
+  name: "${config.name}",
+  id: "${config.id}",
+  version: "${config.version}",
+  description: "${config.description}",
+} as const;
+`;
+  writeFileSync(PATHS.generatedConfig, content);
+  console.log("Generated config file from app.config.json");
+}
 
 type Target = "windows" | "linux" | "macos" | "macos-arm";
 
@@ -159,6 +188,10 @@ async function main(): Promise<void> {
 
   console.log("Desktop App Build Script");
   console.log("=".repeat(40));
+
+  // Load and generate config from app.config.json
+  const appConfig = loadAppConfig();
+  generateConfigFile(appConfig);
 
   if (!existsSync(PATHS.dist)) {
     mkdirSync(PATHS.dist, { recursive: true });

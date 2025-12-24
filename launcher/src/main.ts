@@ -10,6 +10,7 @@ import { spawn, type ChildProcess } from "child_process";
 import { existsSync, mkdirSync, chmodSync } from "fs";
 import { join } from "path";
 import { platform, homedir } from "os";
+import { AppConfig } from "./config.generated";
 
 // @ts-ignore - Embedded binary import
 import embeddedBackend from "./embedded/desktop-backend.exe" with { type: "file" };
@@ -20,15 +21,15 @@ import embeddedBackend from "./embedded/desktop-backend.exe" with { type: "file"
 
 const Config = {
   app: {
-    name: "Desktop App",
-    id: "desktop-app",
-    version: "1.0.0",
+    name: AppConfig.name,
+    id: AppConfig.id,
+    version: AppConfig.version,
   },
   frontend: {
     // Remote URL for the frontend. If set, the WebView will point to this URL
     // instead of the local backend. The backend still starts for API calls.
     // Example: "https://app.example.com"
-    remoteUrl: "https://mohistmc.com",
+    remoteUrl: "",
   },
   backend: {
     port: 8080,

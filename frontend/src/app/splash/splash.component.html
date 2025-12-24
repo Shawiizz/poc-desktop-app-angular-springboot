@@ -1,10 +1,10 @@
 <div class="splash-container" [class.fade-out]="fadeOut">
   <div class="splash-content">
-    <h1 class="splash-title">Desktop App</h1>
+    <h1 class="splash-title">{{ config?.name || 'Loading...' }}</h1>
     <p class="splash-status">{{ status }}</p>
     <div class="loader">
       <div class="loader-bar"></div>
     </div>
   </div>
-  <div class="splash-version">v1.0.0</div>
+  <div class="splash-version">v{{ config?.version || '...' }}</div>
 </div>

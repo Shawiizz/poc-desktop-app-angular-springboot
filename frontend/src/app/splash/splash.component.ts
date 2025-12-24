@@ -1,19 +1,23 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { CommonModule } from '@angular/common';
+import { CommonModule, AsyncPipe } from '@angular/common';
+import { ConfigService, AppConfig } from '../services/config.service';
+import { firstValueFrom } from 'rxjs';
 
 @Component({
   selector: 'app-splash',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, AsyncPipe],
   templateUrl: './splash.component.html',
   styleUrl: './splash.component.css'
 })
 export class SplashComponent implements OnInit {
   status = 'Loading...';
   fadeOut = false;
+  config: AppConfig | null = null;
   
   private readonly router = inject(Router);
+  private readonly configService = inject(ConfigService);
 
   ngOnInit(): void {
     this.initializeApp();
@@ -21,9 +25,16 @@ export class SplashComponent implements OnInit {
 
   private async initializeApp(): Promise<void> {
     this.status = 'Initializing...';
-    await this.delay(1000);
-
-    this.status = 'Loading resources...';
+    
+    // Load config from backend
+    try {
+      this.config = await firstValueFrom(this.configService.getConfig());
+      this.status = 'Loading resources...';
+    } catch (error) {
+      console.error('Failed to load config:', error);
+      this.config = { name: 'Desktop App', id: 'desktop-app', version: '1.0.0', description: '' };
+    }
+    
     await this.delay(1500);
 
     this.status = 'Almost ready...';

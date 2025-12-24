@@ -6,11 +6,11 @@ export class ApiService {
   private readonly baseUrl = this.resolveBaseUrl();
 
   private resolveBaseUrl(): string {
-    const configured = environment.apiBaseUrl?.trim();
+    const configured = environment.apiUrl?.trim();
     if (configured) {
       return configured.replace(/\/$/, '');
     }
-    // Fallback: use current origin (works when frontend est servi par Spring Boot sur port dynamique)
+    // Fallback: use current origin (works when frontend is served by Spring Boot)
     return window.location.origin;
   }
 

@@ -6,9 +6,15 @@ plugins {
     id 'org.graalvm.buildtools.native' version '0.10.4'
 }
 
+import groovy.json.JsonSlurper
+
+// Load app config from central config file
+def appConfigFile = file("${project.projectDir}/app.config.json")
+def appConfig = new JsonSlurper().parse(appConfigFile)
+
 group = 'sample.app'
-version = '0.0.1-SNAPSHOT'
-description = 'Desktop project'
+version = appConfig.version
+description = appConfig.description
 
 java {
     toolchain {
@@ -58,8 +64,23 @@ tasks.register('buildAngular', NpmTask) {
     outputs.dir("frontend/dist")
 }
 
+// Generate app config resource for Spring Boot
+tasks.register('generateAppConfig') {
+    description = "Generate app config resource from app.config.json"
+    def configFile = file("${project.projectDir}/app.config.json")
+    def outputFile = file("${buildDir}/resources/main/app-config.json")
+    
+    inputs.file(configFile)
+    outputs.file(outputFile)
+    
+    doLast {
+        outputFile.parentFile.mkdirs()
+        outputFile.text = configFile.text
+    }
+}
+
 tasks.register('copyAngularBuild', Copy) {
-    dependsOn buildAngular
+    dependsOn buildAngular, generateAppConfig
     description = "Copy Angular build to Spring Boot static resources"
     from 'frontend/dist/frontend/browser'
     into 'build/resources/main/static'
