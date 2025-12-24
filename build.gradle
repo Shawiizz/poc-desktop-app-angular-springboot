@@ -3,6 +3,7 @@ plugins {
     id 'org.springframework.boot' version '3.5.6'
     id 'io.spring.dependency-management' version '1.1.7'
     id 'com.github.node-gradle.node' version '7.1.0'
+    id 'org.graalvm.buildtools.native' version '0.10.4'
 }
 
 group = 'sample.app'
@@ -27,7 +28,7 @@ repositories {
 
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
-    implementation 'me.friwi:jcefmaven:135.0.20'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
@@ -79,3 +80,57 @@ tasks.register('bootJarNoAngular') {
 
 // Usage: gradlew bootJarNoAngular bootJar -x copyAngularBuild -x buildAngular
 // (You can create a more specific aggregate task later if needed)
+
+// ============================================
+// GraalVM Native Image Configuration
+// ============================================
+
+graalvmNative {
+    binaries {
+        main {
+            imageName = 'desktop-backend'
+            mainClass = 'sample.app.desktop.DesktopApplication'
+            
+            buildArgs.addAll([
+                '--no-fallback',
+                '--enable-http',
+                '--enable-https',
+                '-H:+ReportExceptionStackTraces',
+                '--initialize-at-build-time=org.slf4j',
+            ])
+            
+            resources {
+                autodetect()
+            }
+            
+            verbose = true
+        }
+    }
+    
+    toolchainDetection = true
+}
+
+// Build native executable + Bun launcher
+tasks.register('buildNativeDistribution') {
+    group = 'distribution'
+    description = 'Build complete native distribution with Bun launcher + GraalVM backend'
+    
+    dependsOn 'copyAngularBuild', 'nativeCompile'
+    
+    doLast {
+        println '''
+╔══════════════════════════════════════════════════════════════╗
+║  Native Distribution Build Complete!                         ║
+╠══════════════════════════════════════════════════════════════╣
+║  Backend native binary: build/native/nativeCompile/          ║
+║                                                              ║
+║  Next steps:                                                 ║
+║  1. cd launcher                                              ║
+║  2. bun install                                              ║
+║  3. bun run build                                            ║
+║                                                              ║
+║  Output will be in: launcher/dist/                           ║
+╚══════════════════════════════════════════════════════════════╝
+'''
+    }
+}

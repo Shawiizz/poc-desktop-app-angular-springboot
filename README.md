@@ -1,91 +1,149 @@
-# Desktop app using SpringBoot as a backend and Angular as a frontend
+# Desktop Application
 
-This project is a desktop application that utilizes SpringBoot for the backend and Angular for the frontend.       
-It is designed to be inside the same jar file, making it easy to run.
+Desktop application with Spring Boot backend and Angular frontend, rendered in a native WebView.
 
-## Why?
-
-Angular is a great framework for building web applications, but sometimes you need a desktop application.
-This project allows you to leverage the power of Angular while still being able to run it as a desktop application.
-
-## How?
-
-The project is structured as a SpringBoot application with an embedded Angular frontend.
-When you build the project, the Angular application is compiled and placed in the `src/main/resources/static` directory
-of the SpringBoot application.
-This allows SpringBoot to serve the Angular application as static content.
-
-To run the application, you simply need to execute the SpringBoot application, which will serve the Angular frontend.
-
-### Using a remote frontend instead of the bundled one
-
-If you want to point the desktop shell to an external (already deployed) frontend instead of the packaged Angular build, set the property in `application.properties`:
+## Architecture
 
 ```
-frontend.remote-url=https://my-remote-frontend.example.com
++--------------------------------------------------+
+|            Single Executable (~200MB)            |
+|  +--------------------------------------------+  |
+|  |  Launcher (Bun + WebView)                  |  |
+|  |  +------------+      +-----------------+   |  |
+|  |  |  WebView   | HTTP |  Backend        |   |  |
+|  |  |  (Native)  |<---->|  (Spring Boot)  |   |  |
+|  |  +------------+      +-----------------+   |  |
+|  +--------------------------------------------+  |
++--------------------------------------------------+
 ```
 
-If this property is blank or commented, the locally packaged Angular assets are served.
+- Backend: Spring Boot compiled to native with GraalVM
+- Frontend: Angular bundled in backend static resources
+- Launcher: Bun executable with native WebView (Edge/WebKit/GTK)
 
-At runtime the Java window will open directly on the remote URL (still allowing the backend REST APIs to be called from that origin if CORS is properly configured on your remote build).
+## Prerequisites
 
-### Communication between Angular and SpringBoot
+| Tool | Version | Purpose |
+|------|---------|---------|
+| Java | 21+ | Backend development |
+| Node.js | 18+ | Frontend development |
+| GraalVM | 21+ | Native compilation |
+| Bun | 1.0+ | Launcher build |
 
-The Angular frontend communicates with the SpringBoot backend using RESTful APIs (see `api.service.ts` and `app.ts` for
-example usages).
-You can define your REST endpoints in the SpringBoot application and call them from the Angular application using HTTP
-requests.
+## Development
 
-You could also use WebSockets or other communication methods if needed.
-
-## Developers
-
-### Frontend
-
-When developing, you can run the Angular application separately using the Angular CLI.
-This allows you to take advantage of features like hot-reloading and easier debugging.
-
-To run the Angular application separately, navigate to the `frontend` directory and use the following command:
+### Backend only
 
 ```bash
-npm run dev
+./gradlew bootRun
 ```
 
-This will start the Angular development server, and you can access the application at `http://localhost:4200`.
+Access: http://localhost:8080
 
-### Backend
-
-For the SpringBoot backend, you can run it using your IDE or by using the following command:
+### Frontend only
 
 ```bash
-./gradlew bootRun -Dspring.profiles.active=dev
+cd frontend
+npm install
+npm run start
 ```
 
-Make sure to comment out the line `launchDesktopApp();` in the `DesktopApplication.java` file to prevent the Angular
-application from launching automatically during development.
+Access: http://localhost:4200 (proxies API to backend)
 
-### Building without Angular (backend only)
+### Full development mode
 
-By default, the Gradle build runs the Angular build (`buildAngular`) and copies the result into `static/`.
-
-If you just need a backend jar (because you will always use a remote frontend), you can skip Angular with:
+Run both in separate terminals:
 
 ```bash
-./gradlew bootJarNoAngular bootJar -x copyAngularBuild -x buildAngular
+# Terminal 1 - Backend
+./gradlew bootRun
+
+# Terminal 2 - Frontend
+cd frontend
+npm run start
 ```
 
-For running with a custom remote frontend using args (for testing purposes), you can use:
-```bash
-java -Dfrontend.remote-url="https://my-remote-frontend.example.com" -jar build/libs/<jar-name>.jar
-```
+Open http://localhost:4200 for hot-reload development.
 
-### Building the project
+## Build
 
-When you are ready to build the project for production, you can use the following command:
+### Development JAR
 
 ```bash
 ./gradlew build
 ```
 
-This will compile the Angular application and package it with the SpringBoot application into a single jar file located
-in the `build/libs` directory.
+Output: `build/libs/desktop-*.jar`
+
+### Production (Native Executable)
+
+```bash
+# 1. Compile backend to native
+./gradlew nativeCompile
+
+# 2. Build launcher with embedded backend
+cd launcher
+bun install
+bun run build
+```
+
+Output: `launcher/dist/windows/desktop-app.exe`
+
+### Build targets
+
+```bash
+bun run build              # Current platform
+bun run build:windows      # Windows x64
+bun run build:linux        # Linux x64
+bun run build:macos        # macOS x64
+bun run build:macos-arm    # macOS ARM64
+```
+
+## Output Structure
+
+```
+launcher/dist/
+  windows/
+    desktop-app.exe    # Single file (~200MB)
+  linux/
+    desktop-app
+  macos/
+    desktop-app
+```
+
+## Runtime Data
+
+The backend binary is extracted on first launch:
+
+| Platform | Path |
+|----------|------|
+| Windows | `%APPDATA%\desktop-app\` |
+| macOS | `~/Library/Application Support/desktop-app/` |
+| Linux | `~/.local/share/desktop-app/` |
+
+## Project Structure
+
+```
+desktop/
+  build.gradle           # Backend build config
+  src/
+    main/
+      java/              # Spring Boot backend
+      resources/
+        static/          # Angular build output
+  frontend/
+    src/                 # Angular source
+  launcher/
+    src/
+      main.ts            # Launcher entry point
+    scripts/
+      build.ts           # Build script
+```
+
+## WebView Engines
+
+| Platform | Engine |
+|----------|--------|
+| Windows | Edge WebView2 |
+| macOS | WebKit |
+| Linux | WebKitGTK |
