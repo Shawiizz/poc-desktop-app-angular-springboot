@@ -39,3 +39,4 @@ out/
 **/node_modules/
 **/dist/
 config.generated.ts
+**/target/

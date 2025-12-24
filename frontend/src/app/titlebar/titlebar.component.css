@@ -1,0 +1,80 @@
+.titlebar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 32px;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: #ffffff;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-app-region: drag;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+}
+
+.titlebar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-left: 12px;
+  -webkit-app-region: drag;
+}
+
+.titlebar-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.titlebar-title {
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: #ffffff;
+}
+
+.titlebar-controls {
+  display: flex;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: #b0b0b0;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.titlebar-btn:active {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.titlebar-btn.close:hover {
+  background-color: #e81123;
+  color: #ffffff;
+}
+
+.titlebar-btn.close:active {
+  background-color: #c50f1f;
+}
+
+.titlebar-btn svg {
+  pointer-events: none;
+}

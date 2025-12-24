@@ -56,7 +56,7 @@ node {
 
 tasks.register('buildAngular', NpmTask) {
     dependsOn npmInstall
-    description = "Build Angular application"
+    description = "Build Angular application for Tauri"
     args = ['run', 'build']
     inputs.dir("frontend/src")
     inputs.file("frontend/angular.json")
@@ -79,15 +79,9 @@ tasks.register('generateAppConfig') {
     }
 }
 
-tasks.register('copyAngularBuild', Copy) {
-    dependsOn buildAngular, generateAppConfig
-    description = "Copy Angular build to Spring Boot static resources"
-    from 'frontend/dist/frontend/browser'
-    into 'build/resources/main/static'
-}
-
-// By default we embed the built Angular frontend into the jar
-processResources.dependsOn copyAngularBuild
+// Angular is now served by Tauri, not Spring Boot
+// We just need to build it, not copy to Spring Boot resources
+processResources.dependsOn generateAppConfig
 
 // Alternative task: build only the backend jar (skip Angular build)
 tasks.register('bootJarNoAngular') {
@@ -131,12 +125,12 @@ graalvmNative {
     toolchainDetection = true
 }
 
-// Build native executable + Bun launcher
+// Build native executable + Tauri launcher
 tasks.register('buildNativeDistribution') {
     group = 'distribution'
-    description = 'Build complete native distribution with Bun launcher + GraalVM backend'
+    description = 'Build complete native distribution with Tauri launcher + GraalVM backend'
     
-    dependsOn 'copyAngularBuild', 'nativeCompile'
+    dependsOn 'buildAngular', 'nativeCompile'
     
     doLast {
         println '''
@@ -144,13 +138,13 @@ tasks.register('buildNativeDistribution') {
 ║  Native Distribution Build Complete!                         ║
 ╠══════════════════════════════════════════════════════════════╣
 ║  Backend native binary: build/native/nativeCompile/          ║
+║  Angular frontend: frontend/dist/frontend/browser/           ║
 ║                                                              ║
 ║  Next steps:                                                 ║
-║  1. cd launcher                                              ║
-║  2. bun install                                              ║
-║  3. bun run build                                            ║
+║  1. Copy backend to src-tauri/backend/                       ║
+║  2. cd src-tauri && cargo build --release                    ║
 ║                                                              ║
-║  Output will be in: launcher/dist/                           ║
+║  Output: src-tauri/target/release/desktop-app.exe            ║
 ╚══════════════════════════════════════════════════════════════╝
 '''
     }
