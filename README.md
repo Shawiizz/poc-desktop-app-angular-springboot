@@ -90,7 +90,7 @@ Output: `launcher/target/release/desktop-app.exe`
 Use the build script from x64 Native Tools Command Prompt:
 
 ```bash
-build-tauri.bat
+build-app.bat
 ```
 
 This will:
