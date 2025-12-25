@@ -13,8 +13,6 @@ import sample.app.desktop.config.AppConfigService;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 
 /**
  * Desktop Application - Headless Backend Server
@@ -68,25 +66,11 @@ public class DesktopApplication {
 			appConfigService.getVersion(), 
 			port);
 		
-		// Write port to file for Tauri launcher
-		writePortFile(port);
+		// Output port to stdout for Tauri launcher to capture
+		// Format: BACKEND_PORT:12345
+		System.out.println("BACKEND_PORT:" + port);
+		System.out.flush();
 		
 		log.info("Logs directory: {}", appConfigService.getLogsPath());
-	}
-
-	/**
-	 * Write the server port to a file in the app data directory.
-	 * This allows the Tauri launcher to discover which port the backend is using.
-	 */
-	private void writePortFile(int port) {
-		try {
-			Path appDataDir = Path.of(appConfigService.getAppDataPath());
-			Files.createDirectories(appDataDir);
-			Path portFile = appDataDir.resolve("backend.port");
-			Files.writeString(portFile, String.valueOf(port));
-			log.info("Port file written to: {}", portFile);
-		} catch (IOException e) {
-			log.error("Failed to write port file", e);
-		}
 	}
 }

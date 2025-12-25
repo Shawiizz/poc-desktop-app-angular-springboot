@@ -6,9 +6,9 @@
 
 use std::env;
 use std::fs;
-use std::io::Write;
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::Manager;
@@ -42,7 +42,7 @@ const CONFIG: Config = Config {
     app_id: "desktop-app",
     health_endpoint: "/actuator/health",
     startup_timeout: Duration::from_secs(30),
-    health_check_interval: Duration::from_millis(500),
+    health_check_interval: Duration::from_millis(200),
 };
 
 /// Global state for the backend process
@@ -129,48 +129,56 @@ fn extract_backend() -> Result<PathBuf, String> {
     Ok(dest_path)
 }
 
-/// Start the backend process (hidden on Windows, with logging)
-fn start_backend(backend_path: &PathBuf) -> Result<Child, String> {
-    // Create log files for backend output
-    let app_dir = get_app_data_dir();
-    let stdout_log = app_dir.join("backend-stdout.log");
-    let stderr_log = app_dir.join("backend-stderr.log");
-    
-    let stdout_file = fs::File::create(&stdout_log)
-        .map_err(|e| format!("Failed to create stdout log: {}", e))?;
-    let stderr_file = fs::File::create(&stderr_log)
-        .map_err(|e| format!("Failed to create stderr log: {}", e))?;
-    
+/// Start the backend process and capture its port from stdout
+fn start_backend(backend_path: &PathBuf) -> Result<(Child, std::sync::mpsc::Receiver<u16>), String> {
     #[cfg(target_os = "windows")]
-    {
-        Command::new(backend_path)
-            .stdout(stdout_file)
-            .stderr(stderr_file)
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn()
-            .map_err(|e| format!("Failed to start backend: {}", e))
-    }
+    let mut child = Command::new(backend_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map_err(|e| format!("Failed to start backend: {}", e))?;
     
     #[cfg(not(target_os = "windows"))]
-    {
-        Command::new(backend_path)
-            .stdout(stdout_file)
-            .stderr(stderr_file)
-            .spawn()
-            .map_err(|e| format!("Failed to start backend: {}", e))
-    }
+    let mut child = Command::new(backend_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Failed to start backend: {}", e))?;
+
+    // Take stdout from child process
+    let stdout = child.stdout.take()
+        .ok_or_else(|| "Failed to capture stdout".to_string())?;
+    
+    // Channel to send port back
+    let (tx, rx) = std::sync::mpsc::channel();
+    
+    // Spawn thread to read stdout and parse port
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        let mut port_sent = false;
+        
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                // Parse port from "BACKEND_PORT:12345"
+                if !port_sent && line.starts_with("BACKEND_PORT:") {
+                    if let Some(port_str) = line.strip_prefix("BACKEND_PORT:") {
+                        if let Ok(port) = port_str.trim().parse::<u16>() {
+                            let _ = tx.send(port);
+                            port_sent = true;
+                            println!("Captured backend port: {}", port);
+                        }
+                    }
+                }
+            }
+        }
+    });
+    
+    Ok((child, rx))
 }
 
-/// Read the backend port from the port file
-fn read_backend_port() -> Option<u16> {
-    let port_file = get_app_data_dir().join("backend.port");
-    fs::read_to_string(&port_file)
-        .ok()
-        .and_then(|s| s.trim().parse().ok())
-}
-
-/// Wait for the backend to be healthy (with dynamic port)
-fn wait_for_backend() -> Option<u16> {
+/// Wait for the backend port from stdout and verify it's healthy
+fn wait_for_backend(port_rx: &std::sync::mpsc::Receiver<u16>) -> Option<u16> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(2))
         .build()
@@ -178,14 +186,25 @@ fn wait_for_backend() -> Option<u16> {
 
     let start = std::time::Instant::now();
 
+    // First, wait for port from stdout
+    let port = loop {
+        if start.elapsed() > CONFIG.startup_timeout {
+            return None;
+        }
+        
+        match port_rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(port) => break port,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return None,
+        }
+    };
+
+    // Then verify the backend is healthy
     while start.elapsed() < CONFIG.startup_timeout {
-        // Try to read the port file
-        if let Some(port) = read_backend_port() {
-            let health_url = format!("http://localhost:{}{}", port, CONFIG.health_endpoint);
-            if let Ok(response) = client.get(&health_url).send() {
-                if response.status().is_success() {
-                    return Some(port);
-                }
+        let health_url = format!("http://localhost:{}{}", port, CONFIG.health_endpoint);
+        if let Ok(response) = client.get(&health_url).send() {
+            if response.status().is_success() {
+                return Some(port);
             }
         }
         std::thread::sleep(CONFIG.health_check_interval);
@@ -211,13 +230,9 @@ fn main() {
             // Extract backend from embedded bytes
             let backend_path = extract_backend()?;
             
-            // Delete old port file to ensure we read fresh port
-            let port_file = get_app_data_dir().join("backend.port");
-            let _ = fs::remove_file(&port_file);
-            
-            // Start backend
+            // Start backend and get port receiver
             println!("Starting backend...");
-            let process = start_backend(&backend_path)?;
+            let (process, port_rx) = start_backend(&backend_path)?;
             
             // Store process in state
             app.manage(BackendState {
@@ -229,12 +244,12 @@ fn main() {
             
             // Wait for backend in a separate thread, then inject port into Angular
             std::thread::spawn(move || {
-                println!("Waiting for backend health...");
-                if let Some(port) = wait_for_backend() {
+                println!("Waiting for backend port from stdout...");
+                if let Some(port) = wait_for_backend(&port_rx) {
                     println!("Backend is ready on port {}!", port);
                     
                     // Retry injection multiple times to ensure the window is ready
-                    for attempt in 0..10 {
+                    for attempt in 0..20 {
                         if let Some(window) = app_handle.get_webview_window("main") {
                             let js = format!(
                                 "localStorage.setItem('backend_port', '{}'); \
@@ -247,18 +262,18 @@ fn main() {
                                 break;
                             }
                         }
-                        std::thread::sleep(Duration::from_millis(200));
+                        std::thread::sleep(Duration::from_millis(100));
                     }
                 } else {
                     eprintln!("Backend failed to start!");
                     // Notify Angular that backend failed
-                    for _ in 0..10 {
+                    for _ in 0..20 {
                         if let Some(window) = app_handle.get_webview_window("main") {
                             if window.eval("localStorage.setItem('backend_error', 'true');").is_ok() {
                                 break;
                             }
                         }
-                        std::thread::sleep(Duration::from_millis(200));
+                        std::thread::sleep(Duration::from_millis(100));
                     }
                 }
             });
