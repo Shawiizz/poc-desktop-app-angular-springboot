@@ -54,7 +54,7 @@ struct BackendState {
 fn get_app_data_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
-        let appdata = env::var("APPDATA").unwrap_or_else(|_| ".".to_string());
+        let appdata = env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".to_string());
         PathBuf::from(appdata).join(CONFIG.app_id)
     }
     #[cfg(target_os = "macos")]
