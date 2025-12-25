@@ -7,10 +7,10 @@ const fs = require('fs');
 const path = require('path');
 
 const appConfigPath = path.join(__dirname, 'app.config.json');
-const tauriConfigPath = path.join(__dirname, 'src-tauri', 'tauri.conf.json');
+const tauriConfigPath = path.join(__dirname, 'launcher', 'tauri.conf.json');
 const faviconSource = path.join(__dirname, 'favicon.ico');
 const faviconDestAngular = path.join(__dirname, 'frontend', 'public', 'favicon.ico');
-const faviconDestTauri = path.join(__dirname, 'src-tauri', 'icons', 'icon.ico');
+const faviconDestTauri = path.join(__dirname, 'launcher', 'icons', 'icon.ico');
 
 // Read configs
 const appConfig = JSON.parse(fs.readFileSync(appConfigPath, 'utf-8'));
@@ -45,7 +45,7 @@ if (fs.existsSync(faviconSource)) {
   
   if (!fs.existsSync(faviconDestTauri)) {
     fs.copyFileSync(faviconSource, faviconDestTauri);
-    copied.push('src-tauri/icons/');
+    copied.push('launcher/icons/');
   }
   
   if (copied.length > 0) {

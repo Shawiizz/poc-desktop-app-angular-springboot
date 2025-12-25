@@ -79,11 +79,11 @@ npm run start
 cd frontend
 npm run build
 
-cd ../src-tauri
+cd ../launcher
 cargo build --release
 ```
 
-Output: `src-tauri/target/release/desktop-app.exe`
+Output: `launcher/target/release/desktop-app.exe`
 
 ### Full build (with native backend)
 
@@ -110,11 +110,11 @@ desktop/
 │   │   ├── titlebar/      # Custom window titlebar
 │   │   └── services/      # Angular services
 │   └── dist/              # Build output (embedded in Tauri)
-├── src/                   # Spring Boot backend
+├── backend/               # Spring Boot backend
 │   └── main/java/sample/app/desktop/
 │       ├── controller/    # REST API controllers
 │       └── config/        # Configuration (CORS, etc.)
-├── src-tauri/             # Tauri application
+├── launcher/              # Tauri application (Rust)
 │   ├── src/main.rs        # Rust launcher code
 │   ├── backend/           # Embedded native backend
 │   └── capabilities/      # Tauri permissions

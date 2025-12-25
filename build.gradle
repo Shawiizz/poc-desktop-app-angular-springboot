@@ -43,6 +43,26 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+// Configure source directories to use 'backend' instead of 'src'
+sourceSets {
+    main {
+        java {
+            srcDirs = ['backend/main/java']
+        }
+        resources {
+            srcDirs = ['backend/main/resources']
+        }
+    }
+    test {
+        java {
+            srcDirs = ['backend/test/java']
+        }
+        resources {
+            srcDirs = ['backend/test/resources']
+        }
+    }
+}
+
 tasks.named('test') {
     useJUnitPlatform()
 }
@@ -141,10 +161,10 @@ tasks.register('buildNativeDistribution') {
 ║  Angular frontend: frontend/dist/frontend/browser/           ║
 ║                                                              ║
 ║  Next steps:                                                 ║
-║  1. Copy backend to src-tauri/backend/                       ║
-║  2. cd src-tauri && cargo build --release                    ║
+║  1. Copy backend to launcher/backend/                        ║
+║  2. cd launcher && cargo build --release                     ║
 ║                                                              ║
-║  Output: src-tauri/target/release/desktop-app.exe            ║
+║  Output: launcher/target/release/desktop-app.exe             ║
 ╚══════════════════════════════════════════════════════════════╝
 '''
     }
