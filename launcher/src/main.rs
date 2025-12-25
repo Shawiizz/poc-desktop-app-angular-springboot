@@ -8,7 +8,7 @@ use std::env;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::Manager;
@@ -129,13 +129,23 @@ fn extract_backend() -> Result<PathBuf, String> {
     Ok(dest_path)
 }
 
-/// Start the backend process (hidden on Windows)
+/// Start the backend process (hidden on Windows, with logging)
 fn start_backend(backend_path: &PathBuf) -> Result<Child, String> {
+    // Create log files for backend output
+    let app_dir = get_app_data_dir();
+    let stdout_log = app_dir.join("backend-stdout.log");
+    let stderr_log = app_dir.join("backend-stderr.log");
+    
+    let stdout_file = fs::File::create(&stdout_log)
+        .map_err(|e| format!("Failed to create stdout log: {}", e))?;
+    let stderr_file = fs::File::create(&stderr_log)
+        .map_err(|e| format!("Failed to create stderr log: {}", e))?;
+    
     #[cfg(target_os = "windows")]
     {
         Command::new(backend_path)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdout(stdout_file)
+            .stderr(stderr_file)
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map_err(|e| format!("Failed to start backend: {}", e))
@@ -144,8 +154,8 @@ fn start_backend(backend_path: &PathBuf) -> Result<Child, String> {
     #[cfg(not(target_os = "windows"))]
     {
         Command::new(backend_path)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdout(stdout_file)
+            .stderr(stderr_file)
             .spawn()
             .map_err(|e| format!("Failed to start backend: {}", e))
     }
@@ -223,20 +233,32 @@ fn main() {
                 if let Some(port) = wait_for_backend() {
                     println!("Backend is ready on port {}!", port);
                     
-                    // Inject the port into Angular's localStorage via JavaScript
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        let js = format!(
-                            "localStorage.setItem('backend_port', '{}'); \
-                             console.log('Backend port injected:', {});",
-                            port, port
-                        );
-                        let _ = window.eval(&js);
+                    // Retry injection multiple times to ensure the window is ready
+                    for attempt in 0..10 {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let js = format!(
+                                "localStorage.setItem('backend_port', '{}'); \
+                                 localStorage.removeItem('backend_error'); \
+                                 console.log('Backend port injected:', {});",
+                                port, port
+                            );
+                            if window.eval(&js).is_ok() {
+                                println!("Port injected successfully on attempt {}", attempt + 1);
+                                break;
+                            }
+                        }
+                        std::thread::sleep(Duration::from_millis(200));
                     }
                 } else {
                     eprintln!("Backend failed to start!");
                     // Notify Angular that backend failed
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.eval("localStorage.setItem('backend_error', 'true');");
+                    for _ in 0..10 {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            if window.eval("localStorage.setItem('backend_error', 'true');").is_ok() {
+                                break;
+                            }
+                        }
+                        std::thread::sleep(Duration::from_millis(200));
                     }
                 }
             });

@@ -10,6 +10,8 @@ const { execSync } = require('child_process');
 
 const appConfigPath = path.join(__dirname, 'app.config.json');
 const tauriConfigPath = path.join(__dirname, 'launcher', 'tauri.conf.json');
+const backendResourcesPath = path.join(__dirname, 'backend', 'main', 'resources');
+const backendConfigDest = path.join(backendResourcesPath, 'app-config.json');
 const faviconSource = path.join(__dirname, 'favicon.ico');
 const faviconDestAngular = path.join(__dirname, 'frontend', 'public', 'favicon.ico');
 const faviconDestTauri = path.join(__dirname, 'launcher', 'icons', 'icon.ico');
@@ -37,6 +39,13 @@ if (tauriConfig.app?.windows?.[0]) {
 
 // Write back
 fs.writeFileSync(tauriConfigPath, JSON.stringify(tauriConfig, null, 2) + '\n');
+
+// Copy app.config.json to backend resources
+if (!fs.existsSync(backendResourcesPath)) {
+  fs.mkdirSync(backendResourcesPath, { recursive: true });
+}
+fs.copyFileSync(appConfigPath, backendConfigDest);
+console.log('✓ Copied app.config.json → backend/main/resources/');
 
 // Copy favicon only if destination doesn't exist (allow customization)
 if (fs.existsSync(faviconSource)) {

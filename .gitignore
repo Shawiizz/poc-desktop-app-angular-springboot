@@ -28,6 +28,7 @@ launcher/icons/ios/
 
 # Generated config
 config.generated.ts
+backend/main/resources/app-config.json
 
 # OS
 .DS_Store
