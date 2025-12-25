@@ -8,7 +8,7 @@ import { ApiService } from '../api.service';
   standalone: true,
   imports: [CommonModule],
   templateUrl: './home.component.html',
-  styleUrls: ['./home.component.css', '../app.css']
+  styleUrls: ['./home.component.css']
 })
 export class HomeComponent {
   protected readonly title = signal('Application Spring Boot + Angular');

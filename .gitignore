@@ -40,3 +40,4 @@ out/
 **/dist/
 config.generated.ts
 **/target/
+**/src-tauri/backend/

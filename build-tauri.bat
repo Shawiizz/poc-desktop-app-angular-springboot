@@ -11,24 +11,40 @@ echo ========================================
 echo Step 0: Syncing configuration...
 echo ========================================
 call node sync-config.js
+if errorlevel 1 (
+    echo ERROR: Config sync failed!
+    exit /b 1
+)
 
 echo.
 echo ========================================
 echo Step 1: Cleaning previous build...
 echo ========================================
 call gradlew clean
+if errorlevel 1 (
+    echo ERROR: Clean failed!
+    exit /b 1
+)
 
 echo.
 echo ========================================
 echo Step 2: Building Angular frontend...
 echo ========================================
 call gradlew buildAngular
+if errorlevel 1 (
+    echo ERROR: Angular build failed!
+    exit /b 1
+)
 
 echo.
 echo ========================================
 echo Step 3: Compiling native backend (API only)...
 echo ========================================
 call gradlew nativeCompile
+if errorlevel 1 (
+    echo ERROR: Native compile failed!
+    exit /b 1
+)
 
 echo.
 echo ========================================
@@ -36,6 +52,10 @@ echo Step 4: Copying backend to Tauri...
 echo ========================================
 if not exist "src-tauri\backend" mkdir "src-tauri\backend"
 copy /Y "build\native\nativeCompile\desktop-backend.exe" "src-tauri\backend\desktop-backend.exe"
+if errorlevel 1 (
+    echo ERROR: Backend copy failed!
+    exit /b 1
+)
 
 echo.
 echo ========================================
@@ -43,6 +63,11 @@ echo Step 5: Building Tauri application...
 echo ========================================
 cd src-tauri
 call cargo build --release
+if errorlevel 1 (
+    echo ERROR: Tauri build failed!
+    cd ..
+    exit /b 1
+)
 cd ..
 
 echo.
