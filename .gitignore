@@ -20,6 +20,12 @@ build/
 # Embedded backend (generated at build)
 launcher/backend/
 
+# Generated icons (regenerated from favicon.ico at build)
+launcher/icons/*.png
+launcher/icons/*.icns
+launcher/icons/android/
+launcher/icons/ios/
+
 # Generated config
 config.generated.ts
 

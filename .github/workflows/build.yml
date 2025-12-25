@@ -60,8 +60,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli
+
       - name: Sync configuration
         run: node sync-config.js
+
+      - name: Generate icons from source
+        working-directory: launcher
+        run: cargo tauri icon ../favicon.ico
 
       - name: Install frontend dependencies
         working-directory: frontend

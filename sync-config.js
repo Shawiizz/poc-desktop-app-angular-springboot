@@ -1,16 +1,20 @@
 /**
  * Sync app.config.json to tauri.conf.json and copy favicon
  * Run before building: node sync-config.js
+ * Add --icons flag to regenerate all icon formats: node sync-config.js --icons
  */
 
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 const appConfigPath = path.join(__dirname, 'app.config.json');
 const tauriConfigPath = path.join(__dirname, 'launcher', 'tauri.conf.json');
 const faviconSource = path.join(__dirname, 'favicon.ico');
 const faviconDestAngular = path.join(__dirname, 'frontend', 'public', 'favicon.ico');
 const faviconDestTauri = path.join(__dirname, 'launcher', 'icons', 'icon.ico');
+
+const generateIcons = process.argv.includes('--icons');
 
 // Read configs
 const appConfig = JSON.parse(fs.readFileSync(appConfigPath, 'utf-8'));
@@ -59,3 +63,19 @@ console.log('✓ Synced app.config.json → tauri.conf.json');
 console.log(`  Name: ${appConfig.name}`);
 console.log(`  Version: ${appConfig.version}`);
 console.log(`  Identifier: ${tauriConfig.identifier}`);
+
+// Generate all icon formats if --icons flag is passed
+if (generateIcons && fs.existsSync(faviconSource)) {
+  console.log('');
+  console.log('Generating icon formats...');
+  try {
+    execSync(`cargo tauri icon "${faviconSource}"`, {
+      cwd: path.join(__dirname, 'launcher'),
+      stdio: 'inherit'
+    });
+    console.log('✓ Generated all icon formats');
+  } catch (e) {
+    console.error('✗ Failed to generate icons. Make sure cargo and tauri-cli are installed.');
+    console.error('  Run: cargo install tauri-cli');
+  }
+}
