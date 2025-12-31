@@ -10,39 +10,29 @@ export interface AppConfig {
   description: string;
 }
 
-@Injectable({
-  providedIn: 'root'
-})
+@Injectable({ providedIn: 'root' })
 export class ConfigService {
   private readonly http = inject(HttpClient);
   private readonly apiService = inject(ApiService);
-  
   private config$: Observable<AppConfig> | null = null;
 
-  /**
-   * Get the application configuration.
-   * The result is cached and shared across all subscribers.
-   */
+  /** Get the application configuration (cached and shared across subscribers) */
   getConfig(): Observable<AppConfig> {
     if (!this.config$) {
-      this.config$ = this.http.get<AppConfig>(`${this.apiService.getBaseUrl()}/api/config`).pipe(
-        shareReplay(1)
-      );
+      this.config$ = this.http
+        .get<AppConfig>(`${this.apiService.getBaseUrl()}/api/config`)
+        .pipe(shareReplay(1));
     }
     return this.config$;
   }
 
-  /**
-   * Get the application name
-   */
+  /** Get the application name */
   getName(): Observable<string> {
-    return this.getConfig().pipe(map(config => config.name));
+    return this.getConfig().pipe(map((config) => config.name));
   }
 
-  /**
-   * Get the application version
-   */
+  /** Get the application version */
   getVersion(): Observable<string> {
-    return this.getConfig().pipe(map(config => config.version));
+    return this.getConfig().pipe(map((config) => config.version));
   }
 }

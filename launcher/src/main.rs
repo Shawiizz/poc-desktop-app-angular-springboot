@@ -11,7 +11,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::Duration;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -37,11 +37,15 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 struct Config {
     app_id: &'static str,
     startup_timeout: Duration,
+    event_emit_max_attempts: u32,
+    event_emit_interval: Duration,
 }
 
 const CONFIG: Config = Config {
     app_id: "desktop-app",
     startup_timeout: Duration::from_secs(30),
+    event_emit_max_attempts: 50,
+    event_emit_interval: Duration::from_millis(50),
 };
 
 /// Get the application data directory
@@ -220,34 +224,9 @@ fn main() {
             
             std::thread::spawn(move || {
                 println!("Waiting for backend port from stdout...");
-                if let Some(port) = wait_for_backend(&port_rx) {
-                    println!("Backend is ready on port {}!", port);
-                    
-                    for attempt in 0..20 {
-                        if let Some(window) = app_handle.get_webview_window("main") {
-                            let js = format!(
-                                "localStorage.setItem('backend_port', '{}'); \
-                                 localStorage.removeItem('backend_error'); \
-                                 console.log('Backend port injected:', {});",
-                                port, port
-                            );
-                            if window.eval(&js).is_ok() {
-                                println!("Port injected successfully on attempt {}", attempt + 1);
-                                break;
-                            }
-                        }
-                        std::thread::sleep(Duration::from_millis(100));
-                    }
-                } else {
-                    eprintln!("Backend failed to start!");
-                    for _ in 0..20 {
-                        if let Some(window) = app_handle.get_webview_window("main") {
-                            if window.eval("localStorage.setItem('backend_error', 'true');").is_ok() {
-                                break;
-                            }
-                        }
-                        std::thread::sleep(Duration::from_millis(100));
-                    }
+                match wait_for_backend(&port_rx) {
+                    Some(port) => emit_backend_ready(&app_handle, port),
+                    None => emit_backend_error(&app_handle),
                 }
             });
 
@@ -255,4 +234,34 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("Error while running Tauri application");
+}
+
+/// Emit backend-ready event to the frontend
+fn emit_backend_ready(app_handle: &tauri::AppHandle, port: u16) {
+    println!("Backend is ready on port {}!", port);
+    
+    for attempt in 0..CONFIG.event_emit_max_attempts {
+        if let Some(window) = app_handle.get_webview_window("main") {
+            if window.emit("backend-ready", serde_json::json!({ "port": port })).is_ok() {
+                println!("Backend-ready event emitted on attempt {}", attempt + 1);
+                return;
+            }
+        }
+        std::thread::sleep(CONFIG.event_emit_interval);
+    }
+    eprintln!("Failed to emit backend-ready event after {} attempts", CONFIG.event_emit_max_attempts);
+}
+
+/// Emit backend-error event to the frontend
+fn emit_backend_error(app_handle: &tauri::AppHandle) {
+    eprintln!("Backend failed to start!");
+    
+    for _ in 0..CONFIG.event_emit_max_attempts {
+        if let Some(window) = app_handle.get_webview_window("main") {
+            if window.emit("backend-error", ()).is_ok() {
+                return;
+            }
+        }
+        std::thread::sleep(CONFIG.event_emit_interval);
+    }
 }
