@@ -63,10 +63,6 @@ public class AppConfigService {
         }
     }
 
-    /**
-     * Get the application data directory path (for logs, cache, etc.)
-     * Uses the app ID to create a unique folder per OS
-     */
     public String getAppDataPath() {
         String os = System.getProperty("os.name").toLowerCase();
         
@@ -79,14 +75,10 @@ public class AppConfigService {
         } else if (os.contains("mac")) {
             return System.getProperty("user.home") + "/Library/Application Support/" + id;
         } else {
-            // Linux and others
             return System.getProperty("user.home") + "/.local/share/" + id;
         }
     }
 
-    /**
-     * Get the logs directory path
-     */
     public String getLogsPath() {
         return getAppDataPath() + "/logs";
     }

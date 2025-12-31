@@ -2,6 +2,7 @@ package sample.app.desktop;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -22,27 +23,19 @@ import java.io.InputStream;
  */
 @Slf4j
 @SpringBootApplication
+@RequiredArgsConstructor
 public class DesktopApplication {
 
 	private final ServletWebServerApplicationContext webServerAppCtx;
 	private final AppConfigService appConfigService;
 
-	public DesktopApplication(ServletWebServerApplicationContext webServerAppCtx, AppConfigService appConfigService) {
-		this.webServerAppCtx = webServerAppCtx;
-		this.appConfigService = appConfigService;
-	}
-
 	public static void main(String[] args) {
-		// Load app ID early for logging configuration
 		String appId = loadAppIdEarly();
 		System.setProperty("APP_ID", appId);
 		
 		SpringApplication.run(DesktopApplication.class, args);
 	}
 
-	/**
-	 * Load app ID before Spring context is ready (for logback)
-	 */
 	private static String loadAppIdEarly() {
 		try {
 			ClassPathResource resource = new ClassPathResource("app-config.json");
@@ -66,8 +59,6 @@ public class DesktopApplication {
 			appConfigService.getVersion(), 
 			port);
 		
-		// Output port to stdout for Tauri launcher to capture
-		// Format: BACKEND_PORT:12345
 		System.out.println("BACKEND_PORT:" + port);
 		System.out.flush();
 		

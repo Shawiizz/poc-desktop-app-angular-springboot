@@ -1,6 +1,7 @@
 //! Desktop Application Launcher
 //!
 //! Single portable executable with embedded Spring Boot backend.
+//! The backend self-terminates when this launcher process dies.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -8,8 +9,7 @@ use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 use tauri::Manager;
 
@@ -44,11 +44,6 @@ const CONFIG: Config = Config {
     startup_timeout: Duration::from_secs(30),
     health_check_interval: Duration::from_millis(200),
 };
-
-/// Global state for the backend process
-struct BackendState {
-    process: Mutex<Option<Child>>,
-}
 
 /// Get the application data directory
 fn get_app_data_dir() -> PathBuf {
@@ -93,10 +88,8 @@ fn extract_backend() -> Result<PathBuf, String> {
     let dest_path = app_dir.join(backend_name);
     let hash_path = app_dir.join("backend.hash");
 
-    // Compute hash of embedded backend
     let embedded_hash = format!("{:x}", md5::compute(EMBEDDED_BACKEND));
 
-    // Check if extraction is needed
     let needs_extraction = if dest_path.exists() && hash_path.exists() {
         let stored_hash = fs::read_to_string(&hash_path).unwrap_or_default();
         stored_hash.trim() != embedded_hash
@@ -107,13 +100,11 @@ fn extract_backend() -> Result<PathBuf, String> {
     if needs_extraction {
         println!("Extracting backend (hash: {})...", &embedded_hash[..8]);
         
-        // Write backend binary
         let mut file = fs::File::create(&dest_path)
             .map_err(|e| format!("Failed to create backend file: {}", e))?;
         file.write_all(EMBEDDED_BACKEND)
             .map_err(|e| format!("Failed to write backend: {}", e))?;
 
-        // Make executable on Unix
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -121,7 +112,6 @@ fn extract_backend() -> Result<PathBuf, String> {
                 .map_err(|e| format!("Failed to set permissions: {}", e))?;
         }
 
-        // Write hash file
         fs::write(&hash_path, &embedded_hash)
             .map_err(|e| format!("Failed to write hash file: {}", e))?;
     }
@@ -129,38 +119,34 @@ fn extract_backend() -> Result<PathBuf, String> {
     Ok(dest_path)
 }
 
-/// Start the backend process and capture its port from stdout
-fn start_backend(backend_path: &PathBuf) -> Result<(Child, std::sync::mpsc::Receiver<u16>), String> {
-    #[cfg(target_os = "windows")]
-    let mut child = Command::new(backend_path)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .creation_flags(CREATE_NO_WINDOW)
-        .spawn()
-        .map_err(|e| format!("Failed to start backend: {}", e))?;
+/// Start the backend process with parent PID for watchdog
+fn start_backend(backend_path: &PathBuf) -> Result<std::sync::mpsc::Receiver<u16>, String> {
+    let parent_pid = std::process::id().to_string();
     
-    #[cfg(not(target_os = "windows"))]
-    let mut child = Command::new(backend_path)
+    let mut cmd = Command::new(backend_path);
+    cmd.env("TAURI_PARENT_PID", &parent_pid)
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
+        .stderr(Stdio::null());
+    
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    
+    let mut child = cmd.spawn()
         .map_err(|e| format!("Failed to start backend: {}", e))?;
 
-    // Take stdout from child process
+    println!("Backend started with PID {}, parent PID: {}", child.id(), parent_pid);
+
     let stdout = child.stdout.take()
         .ok_or_else(|| "Failed to capture stdout".to_string())?;
     
-    // Channel to send port back
     let (tx, rx) = std::sync::mpsc::channel();
     
-    // Spawn thread to read stdout and parse port
     std::thread::spawn(move || {
         let reader = BufReader::new(stdout);
         let mut port_sent = false;
         
         for line in reader.lines() {
             if let Ok(line) = line {
-                // Parse port from "BACKEND_PORT:12345"
                 if !port_sent && line.starts_with("BACKEND_PORT:") {
                     if let Some(port_str) = line.strip_prefix("BACKEND_PORT:") {
                         if let Ok(port) = port_str.trim().parse::<u16>() {
@@ -172,9 +158,11 @@ fn start_backend(backend_path: &PathBuf) -> Result<(Child, std::sync::mpsc::Rece
                 }
             }
         }
+        
+        let _ = child.wait();
     });
     
-    Ok((child, rx))
+    Ok(rx)
 }
 
 /// Wait for the backend port from stdout and verify it's healthy
@@ -186,7 +174,6 @@ fn wait_for_backend(port_rx: &std::sync::mpsc::Receiver<u16>) -> Option<u16> {
 
     let start = std::time::Instant::now();
 
-    // First, wait for port from stdout
     let port = loop {
         if start.elapsed() > CONFIG.startup_timeout {
             return None;
@@ -199,7 +186,6 @@ fn wait_for_backend(port_rx: &std::sync::mpsc::Receiver<u16>) -> Option<u16> {
         }
     };
 
-    // Then verify the backend is healthy
     while start.elapsed() < CONFIG.startup_timeout {
         let health_url = format!("http://localhost:{}{}", port, CONFIG.health_endpoint);
         if let Ok(response) = client.get(&health_url).send() {
@@ -213,42 +199,48 @@ fn wait_for_backend(port_rx: &std::sync::mpsc::Receiver<u16>) -> Option<u16> {
     None
 }
 
-/// Stop the backend process
-fn stop_backend(state: &BackendState) {
-    if let Ok(mut guard) = state.process.lock() {
-        if let Some(mut process) = guard.take() {
-            let _ = process.kill();
-            let _ = process.wait();
+/// Read app.config.json to check singleInstance setting
+fn is_single_instance_mode() -> bool {
+    if let Ok(exe_path) = env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let config_path = exe_dir.join("app.config.json");
+            if let Ok(content) = fs::read_to_string(&config_path) {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                    return json.get("singleInstance").and_then(|v| v.as_bool()).unwrap_or(true);
+                }
+            }
         }
     }
+    true
 }
 
 fn main() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
+    let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init());
+    
+    if is_single_instance_mode() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_focus();
+                let _ = window.unminimize();
+            }
+        }));
+    }
+    
+    builder
         .setup(|app| {
-            // Extract backend from embedded bytes
             let backend_path = extract_backend()?;
             
-            // Start backend and get port receiver
             println!("Starting backend...");
-            let (process, port_rx) = start_backend(&backend_path)?;
-            
-            // Store process in state
-            app.manage(BackendState {
-                process: Mutex::new(Some(process)),
-            });
+            let port_rx = start_backend(&backend_path)?;
 
-            // Get app handle for async operations
             let app_handle = app.handle().clone();
             
-            // Wait for backend in a separate thread, then inject port into Angular
             std::thread::spawn(move || {
                 println!("Waiting for backend port from stdout...");
                 if let Some(port) = wait_for_backend(&port_rx) {
                     println!("Backend is ready on port {}!", port);
                     
-                    // Retry injection multiple times to ensure the window is ready
                     for attempt in 0..20 {
                         if let Some(window) = app_handle.get_webview_window("main") {
                             let js = format!(
@@ -266,7 +258,6 @@ fn main() {
                     }
                 } else {
                     eprintln!("Backend failed to start!");
-                    // Notify Angular that backend failed
                     for _ in 0..20 {
                         if let Some(window) = app_handle.get_webview_window("main") {
                             if window.eval("localStorage.setItem('backend_error', 'true');").is_ok() {
@@ -279,14 +270,6 @@ fn main() {
             });
 
             Ok(())
-        })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
-                // Stop backend when window closes
-                if let Some(state) = window.try_state::<BackendState>() {
-                    stop_backend(&state);
-                }
-            }
         })
         .run(tauri::generate_context!())
         .expect("Error while running Tauri application");
