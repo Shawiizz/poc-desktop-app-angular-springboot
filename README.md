@@ -170,3 +170,7 @@ The application uses a custom titlebar with:
 - Drag to move window
 - Minimize, maximize, close buttons
 - Application icon and name
+
+## License
+
+This project is licensed under the [MIT License](LICENSE). You are free to use, modify, and distribute this software for any purpose.
