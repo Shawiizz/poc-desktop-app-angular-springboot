@@ -26,6 +26,9 @@ const EMBEDDED_BACKEND: &[u8] = include_bytes!("../backend/desktop-backend");
 #[cfg(target_os = "macos")]
 const EMBEDDED_BACKEND: &[u8] = include_bytes!("../backend/desktop-backend");
 
+/// Embedded backend hash (precalculated at build time)
+const EMBEDDED_HASH: &str = include_str!("../backend/backend.hash");
+
 /// Windows: CREATE_NO_WINDOW flag
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -33,16 +36,12 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 /// Application configuration
 struct Config {
     app_id: &'static str,
-    health_endpoint: &'static str,
     startup_timeout: Duration,
-    health_check_interval: Duration,
 }
 
 const CONFIG: Config = Config {
     app_id: "desktop-app",
-    health_endpoint: "/actuator/health",
     startup_timeout: Duration::from_secs(30),
-    health_check_interval: Duration::from_millis(200),
 };
 
 /// Get the application data directory
@@ -79,7 +78,7 @@ fn get_backend_name() -> &'static str {
     }
 }
 
-/// Extract the embedded backend if needed (based on hash comparison)
+/// Extract the embedded backend if needed (hash comparison with precalculated hash)
 fn extract_backend() -> Result<PathBuf, String> {
     let app_dir = get_app_data_dir();
     fs::create_dir_all(&app_dir).map_err(|e| format!("Failed to create app dir: {}", e))?;
@@ -88,7 +87,7 @@ fn extract_backend() -> Result<PathBuf, String> {
     let dest_path = app_dir.join(backend_name);
     let hash_path = app_dir.join("backend.hash");
 
-    let embedded_hash = format!("{:x}", md5::compute(EMBEDDED_BACKEND));
+    let embedded_hash = EMBEDDED_HASH.trim();
 
     let needs_extraction = if dest_path.exists() && hash_path.exists() {
         let stored_hash = fs::read_to_string(&hash_path).unwrap_or_default();
@@ -112,7 +111,7 @@ fn extract_backend() -> Result<PathBuf, String> {
                 .map_err(|e| format!("Failed to set permissions: {}", e))?;
         }
 
-        fs::write(&hash_path, &embedded_hash)
+        fs::write(&hash_path, embedded_hash)
             .map_err(|e| format!("Failed to write hash file: {}", e))?;
     }
 
@@ -165,53 +164,36 @@ fn start_backend(backend_path: &PathBuf) -> Result<std::sync::mpsc::Receiver<u16
     Ok(rx)
 }
 
-/// Wait for the backend port from stdout and verify it's healthy
+/// Wait for the backend port from stdout (backend prints port only when fully ready)
 fn wait_for_backend(port_rx: &std::sync::mpsc::Receiver<u16>) -> Option<u16> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build()
-        .unwrap();
-
     let start = std::time::Instant::now();
 
-    let port = loop {
+    loop {
         if start.elapsed() > CONFIG.startup_timeout {
             return None;
         }
         
         match port_rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(port) => break port,
+            Ok(port) => return Some(port),
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return None,
         }
-    };
-
-    while start.elapsed() < CONFIG.startup_timeout {
-        let health_url = format!("http://localhost:{}{}", port, CONFIG.health_endpoint);
-        if let Ok(response) = client.get(&health_url).send() {
-            if response.status().is_success() {
-                return Some(port);
-            }
-        }
-        std::thread::sleep(CONFIG.health_check_interval);
     }
-
-    None
 }
 
-/// Read app.config.json to check singleInstance setting
+/// Embedded app configuration (included at compile time)
+const EMBEDDED_CONFIG: &str = include_str!("../../app.config.json");
+
+/// Load app.config.json (embedded at compile time)
+fn load_app_config() -> Option<serde_json::Value> {
+    serde_json::from_str(EMBEDDED_CONFIG).ok()
+}
+
+/// Check if single instance mode is enabled
 fn is_single_instance_mode() -> bool {
-    if let Ok(exe_path) = env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
-            let config_path = exe_dir.join("app.config.json");
-            if let Ok(content) = fs::read_to_string(&config_path) {
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                    return json.get("singleInstance").and_then(|v| v.as_bool()).unwrap_or(true);
-                }
-            }
-        }
-    }
-    true
+    load_app_config()
+        .and_then(|json| json.get("singleInstance").and_then(|v| v.as_bool()))
+        .unwrap_or(true)
 }
 
 fn main() {

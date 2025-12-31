@@ -102,6 +102,27 @@ This will:
 3. Embed backend in Tauri executable
 4. Create final portable exe
 
+> ⚠️ **Note**: The full build can take **10-20 minutes** locally due to GraalVM native compilation. For faster building and cross platform compilation, use CI/CD pipelines.
+
+### CI/CD Pipelines
+
+This project includes GitHub Actions workflows for cross-platform builds:
+
+| Platform | Build Time | Output |
+|----------|------------|--------|
+| Windows | ~15 min | `.exe` |
+| macOS | ~12 min | `.dmg` |
+| Linux | ~10 min | `.deb` |
+
+Pipelines are triggered on:
+- Push to `main` branch
+- Pull requests
+- Manual dispatch
+
+Benefits:
+- **Parallel builds** across all platforms simultaneously
+- **Automated releases** with artifacts attached
+
 ## Project Structure
 
 ```

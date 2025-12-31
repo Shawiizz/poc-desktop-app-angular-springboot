@@ -64,7 +64,7 @@ jobs:
         run: cargo install tauri-cli
 
       - name: Sync configuration
-        run: node sync-config.js
+        run: node scripts/sync-config.js
 
       - name: Generate icons from source
         working-directory: launcher
@@ -89,6 +89,9 @@ jobs:
           mkdir -p launcher/backend
           cp build/native/nativeCompile/${{ matrix.backend }} launcher/backend/
         shell: bash
+
+      - name: Compute backend hash
+        run: node scripts/compute-backend-hash.js
 
       - name: Build Tauri
         working-directory: launcher

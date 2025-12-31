@@ -10,7 +10,7 @@ set PATH=%USERPROFILE%\.cargo\bin;%PATH%
 echo ========================================
 echo Step 0: Syncing configuration...
 echo ========================================
-call node sync-config.js
+call node scripts/sync-config.js
 if errorlevel 1 (
     echo ERROR: Config sync failed!
     exit /b 1
@@ -59,7 +59,17 @@ if errorlevel 1 (
 
 echo.
 echo ========================================
-echo Step 5: Building Tauri application...
+echo Step 5: Computing backend hash...
+echo ========================================
+call node scripts/compute-backend-hash.js
+if errorlevel 1 (
+    echo ERROR: Hash computation failed!
+    exit /b 1
+)
+
+echo.
+echo ========================================
+echo Step 6: Building Tauri application...
 echo ========================================
 cd launcher
 call cargo build --release

@@ -26,10 +26,14 @@ export class SplashComponent implements OnInit {
   }
 
   private async initializeApp(): Promise<void> {
+    // Clear stale port from previous session - wait for fresh injection
+    localStorage.removeItem('backend_port');
+    localStorage.removeItem('backend_error');
+    
     this.status = 'Waiting for backend...';
     
     // Wait for backend API to be ready (port is set by Tauri via localStorage)
-    const apiReady = await this.waitForApiWithStatus(30000, 300);
+    const apiReady = await this.waitForApiWithStatus(30000, 50);
     
     if (!apiReady) {
       this.status = 'Backend failed to start';
@@ -45,14 +49,11 @@ export class SplashComponent implements OnInit {
       this.config = { name: 'Desktop App', id: 'desktop-app', version: '1.0.0', description: '' };
     }
     
-    await this.delay(500);
     this.status = 'Ready!';
-    await this.delay(300);
 
     // Fade out and navigate to home
     this.fadeOut = true;
-    await this.delay(500);
-    
+    await this.delay(400);
     this.router.navigate(['/home']);
   }
 
@@ -64,20 +65,8 @@ export class SplashComponent implements OnInit {
       
       if (port) {
         this.status = 'Connecting to backend...';
-        const baseUrl = `http://localhost:${port}`;
-        
-        try {
-          const response = await fetch(`${baseUrl}/actuator/health`, {
-            method: 'GET',
-            signal: AbortSignal.timeout(2000)
-          });
-          if (response.ok) {
-            this.apiService.refreshBaseUrl();
-            return true;
-          }
-        } catch {
-          // Keep waiting
-        }
+        this.apiService.refreshBaseUrl();
+        return true;
       }
       
       if (localStorage.getItem('backend_error') === 'true') {

@@ -8,13 +8,13 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const appConfigPath = path.join(__dirname, 'app.config.json');
-const tauriConfigPath = path.join(__dirname, 'launcher', 'tauri.conf.json');
-const backendResourcesPath = path.join(__dirname, 'backend', 'main', 'resources');
+const appConfigPath = path.join(__dirname, '..', 'app.config.json');
+const tauriConfigPath = path.join(__dirname, '..', 'launcher', 'tauri.conf.json');
+const backendResourcesPath = path.join(__dirname, '..', 'backend', 'main', 'resources');
 const backendConfigDest = path.join(backendResourcesPath, 'app-config.json');
-const faviconSource = path.join(__dirname, 'favicon.ico');
-const faviconDestAngular = path.join(__dirname, 'frontend', 'public', 'favicon.ico');
-const faviconDestTauri = path.join(__dirname, 'launcher', 'icons', 'icon.ico');
+const faviconSource = path.join(__dirname, '..', 'favicon.ico');
+const faviconDestAngular = path.join(__dirname, '..', 'frontend', 'public', 'favicon.ico');
+const faviconDestTauri = path.join(__dirname, '..', 'launcher', 'icons', 'icon.ico');
 
 const generateIcons = process.argv.includes('--icons');
 
@@ -79,7 +79,7 @@ if (generateIcons && fs.existsSync(faviconSource)) {
   console.log('Generating icon formats...');
   try {
     execSync(`cargo tauri icon "${faviconSource}"`, {
-      cwd: path.join(__dirname, 'launcher'),
+      cwd: path.join(__dirname, '..', 'launcher'),
       stdio: 'inherit'
     });
     console.log('✓ Generated all icon formats');

@@ -12,7 +12,6 @@ import java.util.*;
 @Slf4j
 @RestController
 @RequestMapping("/api")
-@CrossOrigin(origins = "*")
 @RequiredArgsConstructor
 public class ApiController {
 
