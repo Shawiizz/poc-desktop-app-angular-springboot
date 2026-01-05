@@ -1,46 +1,60 @@
 package sample.app.desktop.controller;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.web.bind.annotation.*;
+import jakarta.inject.Inject;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DefaultValue;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.MediaType;
+import lombok.extern.jbosslog.JBossLog;
 import sample.app.desktop.config.AppConfigService;
 
 import java.io.IOException;
-import java.nio.file.*;
-import java.util.*;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.List;
+import java.util.Map;
 
-@Slf4j
-@RestController
-@RequestMapping("/api")
-@RequiredArgsConstructor
+@JBossLog
+@Path("/api")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
 public class ApiController {
 
-    private final AppConfigService appConfigService;
+    @Inject
+    AppConfigService appConfigService;
 
-    @PostMapping("/hello")
-    public String sayHello(@RequestBody(required = false) String message) {
-        log.info("Received message: {}", message);
-        return "Hello from Spring Boot!";
+    @POST
+    @Path("/hello")
+    @Consumes(MediaType.TEXT_PLAIN)
+    @Produces(MediaType.TEXT_PLAIN)
+    public String sayHello(String message) {
+        log.infof("Received message: %s", message);
+        return "Hello from Quarkus!";
     }
 
-    @GetMapping("/logs/path")
+    @GET
+    @Path("/logs/path")
     public Map<String, String> getLogsPath() {
         return Map.of("path", appConfigService.getLogsPath());
     }
 
-    @GetMapping("/logs/recent")
-    public Map<String, Object> getRecentLogs(@RequestParam(defaultValue = "100") int lines) {
+    @GET
+    @Path("/logs/recent")
+    public Map<String, Object> getRecentLogs(@QueryParam("lines") @DefaultValue("100") int lines) {
         try {
-            Path logFile = Paths.get(appConfigService.getLogsPath(), "app.log");
+            java.nio.file.Path logFile = Paths.get(appConfigService.getLogsPath(), "app.log");
             if (!Files.exists(logFile)) {
                 return Map.of("lines", List.of(), "exists", false);
             }
             
             List<String> allLines = Files.readAllLines(logFile);
             int start = Math.max(0, allLines.size() - lines);
-            List<String> recentLines = allLines.subList(start, allLines.size());
             
-            return Map.of("lines", recentLines, "exists", true, "total", allLines.size());
+            return Map.of("lines", allLines.subList(start, allLines.size()), "exists", true, "total", allLines.size());
         } catch (IOException e) {
             log.error("Failed to read logs", e);
             return Map.of("error", e.getMessage(), "exists", false);

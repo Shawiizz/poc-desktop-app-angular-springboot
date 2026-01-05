@@ -1,12 +1,11 @@
 package sample.app.desktop.config;
 
-import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.SpringApplication;
-import org.springframework.context.ApplicationContext;
-import org.springframework.stereotype.Component;
+import io.quarkus.runtime.Quarkus;
+import io.quarkus.runtime.ShutdownEvent;
+import io.quarkus.runtime.StartupEvent;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
+import lombok.extern.jbosslog.JBossLog;
 
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -14,85 +13,50 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Watchdog that monitors the parent Tauri process.
- * If the parent process dies (crash, kill, etc.), this component
- * triggers a graceful shutdown of the Spring Boot application.
- * 
- * This ensures no orphan backend processes remain running.
+ * If the parent process dies, triggers graceful shutdown.
  */
-@Slf4j
-@Component
-@RequiredArgsConstructor
+@JBossLog
+@ApplicationScoped
 public class ParentProcessWatchdog {
 
     private static final String PARENT_PID_ENV = "TAURI_PARENT_PID";
-    private static final long CHECK_INTERVAL_MS = 1000; // 1 second
+    private static final long CHECK_INTERVAL_MS = 1000;
 
-    private final ApplicationContext applicationContext;
     private ScheduledExecutorService scheduler;
     private Long parentPid;
 
-    @PostConstruct
-    public void init() {
+    void onStart(@Observes StartupEvent ev) {
         String pidStr = System.getenv(PARENT_PID_ENV);
         
         if (pidStr == null || pidStr.isBlank()) {
-            log.info("No parent PID provided ({}), watchdog disabled (standalone mode)", PARENT_PID_ENV);
+            log.infof("No parent PID provided (%s), watchdog disabled", PARENT_PID_ENV);
             return;
         }
 
         try {
             parentPid = Long.parseLong(pidStr.trim());
-            log.info("Parent process watchdog started, monitoring PID: {}", parentPid);
+            log.infof("Watchdog monitoring PID: %d", parentPid);
             
             scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "parent-watchdog");
+                Thread t = new Thread(r, "watchdog");
                 t.setDaemon(true);
                 return t;
             });
             
-            scheduler.scheduleAtFixedRate(
-                this::checkParentProcess,
-                CHECK_INTERVAL_MS,
-                CHECK_INTERVAL_MS,
-                TimeUnit.MILLISECONDS
-            );
+            scheduler.scheduleAtFixedRate(this::checkParent, CHECK_INTERVAL_MS, CHECK_INTERVAL_MS, TimeUnit.MILLISECONDS);
         } catch (NumberFormatException e) {
-            log.warn("Invalid parent PID '{}', watchdog disabled", pidStr);
+            log.warnf("Invalid parent PID '%s'", pidStr);
         }
     }
 
-    @PreDestroy
-    public void shutdown() {
-        if (scheduler != null && !scheduler.isShutdown()) {
-            scheduler.shutdownNow();
+    void onStop(@Observes ShutdownEvent ev) {
+        if (scheduler != null) scheduler.shutdownNow();
+    }
+
+    private void checkParent() {
+        if (parentPid != null && !ProcessHandle.of(parentPid).map(ProcessHandle::isAlive).orElse(false)) {
+            log.info("Parent process gone, shutting down...");
+            Quarkus.asyncExit(0);
         }
-    }
-
-    private void checkParentProcess() {
-        if (parentPid == null) return;
-        
-        try {
-            if (!isProcessRunning(parentPid)) {
-                log.info("Parent process {} is no longer running, initiating shutdown...", parentPid);
-                triggerShutdown();
-            }
-        } catch (Exception e) {
-            log.error("Error checking parent process", e);
-        }
-    }
-
-    private boolean isProcessRunning(long pid) {
-        return ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false);
-    }
-
-    private void triggerShutdown() {
-        new Thread(() -> {
-            try {
-                Thread.sleep(100); // Small delay to ensure log is flushed
-            } catch (InterruptedException ignored) {}
-            
-            log.info("Goodbye!");
-            SpringApplication.exit(applicationContext, () -> 0);
-        }, "shutdown-thread").start();
     }
 }

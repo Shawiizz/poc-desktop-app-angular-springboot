@@ -2,6 +2,6 @@
   "name": "Desktop App",
   "id": "desktop-app",
   "version": "1.0.0",
-  "description": "Desktop application with Spring Boot and Angular",
+  "description": "Desktop application with Quarkus and Angular",
   "singleInstance": false
 }

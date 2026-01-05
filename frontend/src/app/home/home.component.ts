@@ -11,7 +11,7 @@ import { ApiService } from '../api.service';
   styleUrls: ['./home.component.css']
 })
 export class HomeComponent {
-  protected readonly title = signal('Application Spring Boot + Angular');
+  protected readonly title = signal('Application Quarkus + Angular');
   protected readonly message = signal('');
 
   private readonly http = inject(HttpClient);

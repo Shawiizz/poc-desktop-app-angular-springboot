@@ -1,21 +1,23 @@
 package sample.app.desktop.controller;
 
-import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import jakarta.inject.Inject;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
 import sample.app.desktop.config.AppConfigService;
 
 import java.util.Map;
 
-@RestController
-@RequestMapping("/api")
-@RequiredArgsConstructor
+@Path("/api")
+@Produces(MediaType.APPLICATION_JSON)
 public class ConfigController {
 
-    private final AppConfigService appConfigService;
+    @Inject
+    AppConfigService appConfigService;
 
-    @GetMapping("/config")
+    @GET
+    @Path("/config")
     public Map<String, String> getConfig() {
         return Map.of(
             "name", appConfigService.getName(),

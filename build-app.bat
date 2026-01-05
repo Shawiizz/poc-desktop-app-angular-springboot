@@ -26,6 +26,10 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM Clean launcher backend files
+echo Cleaning launcher backend files...
+if exist "launcher\backend" rd /S /Q "launcher\backend"
+
 echo.
 echo ========================================
 echo Step 2: Building Angular frontend...
@@ -38,9 +42,9 @@ if errorlevel 1 (
 
 echo.
 echo ========================================
-echo Step 3: Compiling native backend (API only)...
+echo Step 3: Compiling native backend (Quarkus)...
 echo ========================================
-call gradlew nativeCompile
+call gradlew build -Dquarkus.native.enabled=true -Dquarkus.package.jar.enabled=false
 if errorlevel 1 (
     echo ERROR: Native compile failed!
     exit /b 1
@@ -51,15 +55,28 @@ echo ========================================
 echo Step 4: Copying backend to launcher...
 echo ========================================
 if not exist "launcher\backend" mkdir "launcher\backend"
-copy /Y "build\native\nativeCompile\desktop-backend.exe" "launcher\backend\desktop-backend.exe"
-if errorlevel 1 (
-    echo ERROR: Backend copy failed!
+for %%f in (build\*-runner.exe) do (
+    echo Found native binary: %%f
+    copy /Y "%%f" "launcher\backend\desktop-backend.exe"
+)
+if not exist "launcher\backend\desktop-backend.exe" (
+    echo ERROR: Backend copy failed! No *-runner.exe found in build folder.
     exit /b 1
 )
 
 echo.
 echo ========================================
-echo Step 5: Computing backend hash...
+echo Step 5: Compressing backend with zstd...
+echo ========================================
+call node scripts/compress-backend.js
+if errorlevel 1 (
+    echo ERROR: Backend compression failed!
+    exit /b 1
+)
+
+echo.
+echo ========================================
+echo Step 6: Computing backend hash...
 echo ========================================
 call node scripts/compute-backend-hash.js
 if errorlevel 1 (
@@ -69,7 +86,7 @@ if errorlevel 1 (
 
 echo.
 echo ========================================
-echo Step 6: Building Tauri application...
+echo Step 7: Building Tauri application...
 echo ========================================
 cd launcher
 call cargo build --release

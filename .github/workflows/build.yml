@@ -58,7 +58,15 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf zstd
+
+      - name: Install macOS dependencies
+        if: matrix.os == 'macos-latest'
+        run: brew install zstd
+
+      - name: Install Windows dependencies
+        if: matrix.os == 'windows-latest'
+        run: choco install zstd -y
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli
@@ -78,17 +86,24 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      - name: Build native backend
+      - name: Build native backend (Quarkus)
         run: |
           chmod +x ./gradlew
-          ./gradlew nativeCompile --no-daemon
+          ./gradlew build -Dquarkus.native.enabled=true -Dquarkus.package.jar.enabled=false --no-daemon
         shell: bash
 
       - name: Copy backend to launcher
         run: |
           mkdir -p launcher/backend
-          cp build/native/nativeCompile/${{ matrix.backend }} launcher/backend/
+          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            cp build/*-runner.exe launcher/backend/${{ matrix.backend }}
+          else
+            cp build/*-runner launcher/backend/${{ matrix.backend }}
+          fi
         shell: bash
+
+      - name: Compress backend with zstd
+        run: node scripts/compress-backend.js
 
       - name: Compute backend hash
         run: node scripts/compute-backend-hash.js

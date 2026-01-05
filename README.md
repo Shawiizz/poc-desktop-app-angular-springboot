@@ -1,24 +1,24 @@
 # Desktop Application
 
-Desktop application with Spring Boot backend (API) and Angular frontend, packaged with Tauri.
+Desktop application with **Quarkus** backend (API) and Angular frontend, packaged with Tauri.
 
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────────────┐
-│            Single Executable (~94MB)             │
+│            Single Executable (~40MB)             │
 │  ┌────────────────────────────────────────────┐  │
 │  │  Tauri (Rust)           TAURI_PARENT_PID   │  │
 │  │  ┌────────────┐      ┌─────────────────┐   │  │
 │  │  │  WebView   │ HTTP │  Backend API    │   │  │
-│  │  │  (Native)  │◄────►│  (Spring Boot)  │   │  │
+│  │  │  (Native)  │◄────►│  (Quarkus)      │   │  │
 │  │  │  Angular   │      │  + Watchdog     │   │  │
 │  │  └────────────┘      └─────────────────┘   │  │
 │  └────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────┘
 ```
 
-- **Backend**: Spring Boot compiled to native with GraalVM
+- **Backend**: Quarkus compiled to native with GraalVM (zstd compressed)
 - **Frontend**: Angular served directly by Tauri WebView
 - **Launcher**: Tauri (Rust) with native WebView and embedded backend
 - **Watchdog**: Backend auto-terminates when launcher dies (no orphan processes)
@@ -28,9 +28,10 @@ Desktop application with Spring Boot backend (API) and Angular frontend, package
 - Frameless window with custom titlebar
 - Dynamic port allocation (no conflicts)
 - Splash screen during backend startup
-- Single portable executable
+- Single portable executable (~40MB with compression)
 - Single-instance mode (configurable)
 - Automatic backend cleanup on exit/crash
+- Ultra-fast startup (<100ms for backend)
 
 ## Prerequisites
 
@@ -40,13 +41,14 @@ Desktop application with Spring Boot backend (API) and Angular frontend, package
 | Node.js | 18+ | Frontend development |
 | GraalVM | 21+ | Native backend compilation |
 | Rust | 1.70+ | Tauri build |
+| zstd | latest | Backend compression |
 
 ## Development
 
 ### Backend only
 
 ```bash
-./gradlew bootRun
+./gradlew quarkusDev
 ```
 
 Access: http://localhost:8080
@@ -66,8 +68,8 @@ Access: http://localhost:4200
 Run both in separate terminals:
 
 ```bash
-# Terminal 1 - Backend
-./gradlew bootRun
+# Terminal 1 - Backend (hot reload)
+./gradlew quarkusDev
 
 # Terminal 2 - Frontend
 cd frontend
@@ -98,7 +100,7 @@ build-app.bat
 
 This will:
 1. Build Angular frontend
-2. Compile Spring Boot to native with GraalVM
+2. Compile Quarkus to native with GraalVM
 3. Embed backend in Tauri executable
 4. Create final portable exe
 
@@ -134,7 +136,7 @@ desktop/
 │       ├── splash/        # Loading screen
 │       ├── home/          # Main content
 │       └── titlebar/      # Custom window titlebar
-├── backend/               # Spring Boot backend
+├── backend/               # Quarkus backend
 │   └── main/java/sample/app/desktop/
 │       ├── controller/    # REST API
 │       └── config/        # CORS, Watchdog, etc.
@@ -152,7 +154,7 @@ Edit `app.config.json`:
   "name": "Desktop App",
   "id": "desktop-app",
   "version": "1.0.0",
-  "description": "Desktop application with Spring Boot and Angular",
+  "description": "Desktop application with Quarkus and Angular",
   "singleInstance": true
 }
 ```

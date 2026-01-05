@@ -1,30 +1,32 @@
 //! Desktop Application Launcher
 //!
-//! Single portable executable with embedded Spring Boot backend.
+//! Single portable executable with embedded Quarkus backend.
 //! The backend self-terminates when this launcher process dies.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::env;
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{Cursor, Write};
+use std::net::TcpListener;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 use tauri::{Emitter, Manager};
+use zstd::stream::decode_all;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
-/// Embedded backend binary (included at compile time)
+/// Embedded backend binary - COMPRESSED with zstd (included at compile time)
 #[cfg(target_os = "windows")]
-const EMBEDDED_BACKEND: &[u8] = include_bytes!("../backend/desktop-backend.exe");
+const EMBEDDED_BACKEND_COMPRESSED: &[u8] = include_bytes!("../backend/desktop-backend.exe.zst");
 
 #[cfg(target_os = "linux")]
-const EMBEDDED_BACKEND: &[u8] = include_bytes!("../backend/desktop-backend");
+const EMBEDDED_BACKEND_COMPRESSED: &[u8] = include_bytes!("../backend/desktop-backend.zst");
 
 #[cfg(target_os = "macos")]
-const EMBEDDED_BACKEND: &[u8] = include_bytes!("../backend/desktop-backend");
+const EMBEDDED_BACKEND_COMPRESSED: &[u8] = include_bytes!("../backend/desktop-backend.zst");
 
 /// Embedded backend hash (precalculated at build time)
 const EMBEDDED_HASH: &str = include_str!("../backend/backend.hash");
@@ -37,6 +39,7 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 struct Config {
     app_id: &'static str,
     startup_timeout: Duration,
+    health_check_interval: Duration,
     event_emit_max_attempts: u32,
     event_emit_interval: Duration,
 }
@@ -44,6 +47,7 @@ struct Config {
 const CONFIG: Config = Config {
     app_id: "desktop-app",
     startup_timeout: Duration::from_secs(30),
+    health_check_interval: Duration::from_millis(100),
     event_emit_max_attempts: 50,
     event_emit_interval: Duration::from_millis(50),
 };
@@ -82,7 +86,18 @@ fn get_backend_name() -> &'static str {
     }
 }
 
-/// Extract the embedded backend if needed (hash comparison with precalculated hash)
+/// Find an available port by binding to port 0
+fn find_available_port() -> Result<u16, String> {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| format!("Failed to find available port: {}", e))?;
+    let port = listener.local_addr()
+        .map_err(|e| format!("Failed to get local address: {}", e))?
+        .port();
+    drop(listener);
+    Ok(port)
+}
+
+/// Extract the embedded backend if needed (hash comparison)
 fn extract_backend() -> Result<PathBuf, String> {
     let app_dir = get_app_data_dir();
     fs::create_dir_all(&app_dir).map_err(|e| format!("Failed to create app dir: {}", e))?;
@@ -103,9 +118,14 @@ fn extract_backend() -> Result<PathBuf, String> {
     if needs_extraction {
         println!("Extracting backend (hash: {})...", &embedded_hash[..8]);
         
+        println!("Decompressing backend ({} bytes compressed)...", EMBEDDED_BACKEND_COMPRESSED.len());
+        let decompressed = decode_all(Cursor::new(EMBEDDED_BACKEND_COMPRESSED))
+            .map_err(|e| format!("Failed to decompress backend: {}", e))?;
+        println!("Decompressed to {} bytes", decompressed.len());
+        
         let mut file = fs::File::create(&dest_path)
             .map_err(|e| format!("Failed to create backend file: {}", e))?;
-        file.write_all(EMBEDDED_BACKEND)
+        file.write_all(&decompressed)
             .map_err(|e| format!("Failed to write backend: {}", e))?;
 
         #[cfg(unix)]
@@ -122,67 +142,52 @@ fn extract_backend() -> Result<PathBuf, String> {
     Ok(dest_path)
 }
 
-/// Start the backend process with parent PID for watchdog
-fn start_backend(backend_path: &PathBuf) -> Result<std::sync::mpsc::Receiver<u16>, String> {
+/// Start the backend process with the specified port
+fn start_backend(backend_path: &PathBuf, port: u16) -> Result<Child, String> {
     let parent_pid = std::process::id().to_string();
     
     let mut cmd = Command::new(backend_path);
     cmd.env("TAURI_PARENT_PID", &parent_pid)
-        .stdout(Stdio::piped())
+        .env("BACKEND_PORT", port.to_string())
+        .stdout(Stdio::null())
         .stderr(Stdio::null());
     
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
     
-    let mut child = cmd.spawn()
+    let child = cmd.spawn()
         .map_err(|e| format!("Failed to start backend: {}", e))?;
 
-    println!("Backend started with PID {}, parent PID: {}", child.id(), parent_pid);
+    println!("Backend started with PID {}, port {}, parent PID: {}", child.id(), port, parent_pid);
 
-    let stdout = child.stdout.take()
-        .ok_or_else(|| "Failed to capture stdout".to_string())?;
-    
-    let (tx, rx) = std::sync::mpsc::channel();
-    
-    std::thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-        let mut port_sent = false;
-        
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                if !port_sent && line.starts_with("BACKEND_PORT:") {
-                    if let Some(port_str) = line.strip_prefix("BACKEND_PORT:") {
-                        if let Ok(port) = port_str.trim().parse::<u16>() {
-                            let _ = tx.send(port);
-                            port_sent = true;
-                            println!("Captured backend port: {}", port);
-                        }
-                    }
-                }
-            }
-        }
-        
-        let _ = child.wait();
-    });
-    
-    Ok(rx)
+    Ok(child)
 }
 
-/// Wait for the backend port from stdout (backend prints port only when fully ready)
-fn wait_for_backend(port_rx: &std::sync::mpsc::Receiver<u16>) -> Option<u16> {
+/// Wait for the backend to be ready via health check
+fn wait_for_backend_health(port: u16) -> bool {
+    let url = format!("http://127.0.0.1:{}/api/hello", port);
     let start = std::time::Instant::now();
 
-    loop {
-        if start.elapsed() > CONFIG.startup_timeout {
-            return None;
-        }
-        
-        match port_rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(port) => return Some(port),
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return None,
+    println!("Waiting for backend health at {}...", url);
+
+    while start.elapsed() < CONFIG.startup_timeout {
+        match ureq::post(&url)
+            .set("Content-Type", "text/plain")
+            .timeout(Duration::from_secs(2))
+            .send_string("health-check")
+        {
+            Ok(response) if response.status() == 200 => {
+                println!("Backend is healthy! (took {:?})", start.elapsed());
+                return true;
+            }
+            _ => {
+                std::thread::sleep(CONFIG.health_check_interval);
+            }
         }
     }
+
+    eprintln!("Backend health check timed out after {:?}", CONFIG.startup_timeout);
+    false
 }
 
 /// Embedded app configuration (included at compile time)
@@ -215,18 +220,23 @@ fn main() {
     
     builder
         .setup(|app| {
+            // Find available port
+            let port = find_available_port()?;
+            println!("Allocated port: {}", port);
+
+            // Extract and start backend
             let backend_path = extract_backend()?;
-            
-            println!("Starting backend...");
-            let port_rx = start_backend(&backend_path)?;
+            println!("Starting backend on port {}...", port);
+            let _child = start_backend(&backend_path, port)?;
 
             let app_handle = app.handle().clone();
             
+            // Health check in background thread
             std::thread::spawn(move || {
-                println!("Waiting for backend port from stdout...");
-                match wait_for_backend(&port_rx) {
-                    Some(port) => emit_backend_ready(&app_handle, port),
-                    None => emit_backend_error(&app_handle),
+                if wait_for_backend_health(port) {
+                    emit_backend_ready(&app_handle, port);
+                } else {
+                    emit_backend_error(&app_handle);
                 }
             });
 
@@ -238,7 +248,7 @@ fn main() {
 
 /// Emit backend-ready event to the frontend
 fn emit_backend_ready(app_handle: &tauri::AppHandle, port: u16) {
-    println!("Backend is ready on port {}!", port);
+    println!("Emitting backend-ready with port {}...", port);
     
     for attempt in 0..CONFIG.event_emit_max_attempts {
         if let Some(window) = app_handle.get_webview_window("main") {
