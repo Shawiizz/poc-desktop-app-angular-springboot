@@ -66,7 +66,7 @@ jobs:
 
       - name: Install Windows dependencies
         if: matrix.os == 'windows-latest'
-        run: choco install zstd -y
+        run: choco install zstandard -y
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli
